@@ -55,7 +55,11 @@ view = (APP / "BCDSettingsFeedback.swift").read_text()
 live = (APP / "BCDSettingsLive.swift").read_text()
 upload = (APP / "FeedbackUpload.swift").read_text()
 upload_core = (APP / "FeedbackUploadCore.swift").read_text()
-worker = (R / "bcd-logs/worker/worker.js").read_text()
+worker_path = R / "bcd-logs/worker/worker.js"
+HAS_WORKER = worker_path.is_file()
+worker = worker_path.read_text() if HAS_WORKER else ""
+if not HAS_WORKER:
+    print("UNVERIFIED: bcd-logs Worker source is absent from v0.1.712; attachment UI and client checks still run")
 project = (R / "app/Madeira.xcodeproj/project.pbxproj").read_text()
 workflow = (R / ".github/workflows/build-ipa.yml").read_text()
 
@@ -90,9 +94,12 @@ check("BCDFeedbackAttach.logFailed(error.localizedDescription)" in lf and "Your 
 check("LogUpload.send(url, game: LogUpload.game(of: url)" in lf and "LogUpload.recentLogs()" in lf, "live: the existing log upload, among the newest logs only")
 check("static func send(kind: String, text: String, log: String? = nil" in upload and 'if let log, isLogCode(log) { fields["log"] = log }' in upload_core,
       "FeedbackUpload and FeedbackUploadCore are as they were: one optional `log` field")
-log_lines = [l for l in worker.splitlines() if 'Object.hasOwn(body, "log")' in l]
-check(len(log_lines) == 2 and not any("kind" in l for l in log_lines) and '!/^[0-9A-HJKMNP-TV-Z]{6}$/.test(body.log)' in worker,
-      "the intake takes a log code with any kind (its two checks of `log` name no kind), so a bug report needs no new field or route", str(log_lines))
+if HAS_WORKER:
+    log_lines = [l for l in worker.splitlines() if 'Object.hasOwn(body, "log")' in l]
+    check(len(log_lines) == 2 and not any("kind" in l for l in log_lines) and '!/^[0-9A-HJKMNP-TV-Z]{6}$/.test(body.log)' in worker,
+          "the intake takes a log code with any kind (its two checks of `log` name no kind), so a bug report needs no new field or route", str(log_lines))
+else:
+    print("UNVERIFIED: server-side attachment validation and storage are outside the available source")
 preview = (R / "app/BCDPreview/BCDSettingsPreviewData.swift").read_text()
 check("attachLog" in preview and "draft.attachLog = true" in preview, "the preview's sample still sets the draft through attachLog")
 check(project.count("/* BCDFeedbackAttach.swift in Sources */") == 2 and project.count("path = BCDFeedbackAttach.swift;") == 1, "BCDFeedbackAttach.swift is in the Xcode project")

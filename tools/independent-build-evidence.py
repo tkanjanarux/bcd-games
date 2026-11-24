@@ -118,6 +118,8 @@ def inventory_tracked_binaries() -> list[dict[str, object]]:
 def verify_required_checks(workflow: str) -> None:
     required = [
         "tests/host/check-log-upload.py",
+        "tests/host/check-feedback.py",
+        "tests/host/check-feedback-attach.py",
         "tests/host/check-bcd-perftrace.py",
         "tests/host/check-bcd-help.py",
         "tests/host/check-bcd-screenshot.py",
@@ -203,6 +205,21 @@ def preflight(out: Path) -> None:
                 fail("cache fallback keys are forbidden in an independent source build")
     actions = action_refs(workflow)
     verify_required_checks(workflow)
+    audit = AUDIT.read_text()
+    worker = ROOT / "bcd-logs/worker/worker.js"
+    if not worker.exists() and ("UNVERIFIED" not in audit or "server-side privacy or security claim" not in audit):
+        fail("the missing external diagnostic Worker must be disclosed as unverified in the security audit")
+    if not worker.exists():
+        tests = [ROOT / f"tests/host/{name}" for name in ("check-log-upload.py", "check-feedback.py", "check-feedback-attach.py", "check-bcd-help.py", "check-bcd-screenshot.py")]
+        if not all(path.is_file() and "UNVERIFIED: bcd-logs Worker source is absent" in path.read_text() for path in tests):
+            fail("client privacy checks must report the missing Worker source explicitly")
+    pull_tool = ROOT / "tools/pull-logs.py"
+    if not pull_tool.exists():
+        if "operator-side `tools/pull-logs.py` helper" not in audit or "reported as `UNVERIFIED`" not in audit:
+            fail("the absent log-pull operator utility must be disclosed as unverified")
+        tests = [ROOT / f"tests/host/{name}" for name in ("check-log-upload.py", "check-feedback.py", "check-bcd-help.py", "check-bcd-screenshot.py")]
+        if not all(path.is_file() and "UNVERIFIED" in path.read_text() for path in tests):
+            fail("host checks must print UNVERIFIED for the absent log-pull operator utility")
     verify_pinned_input_references(lock)
 
     submodule_status = subprocess.check_output(

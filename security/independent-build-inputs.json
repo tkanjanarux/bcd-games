@@ -190,5 +190,14 @@
       "version": "1.13.2",
       "sha256": "fd82e26c0706ad4ab88e5fdd26f3fab0a987a90f810160f6c322e752c6af298b"
     }
+  ],
+  "external_services": [
+    {
+      "name": "BCD diagnostic upload Cloudflare Worker",
+      "host": "bcd.bcd-logs.workers.dev",
+      "source_status": "not present in v0.1.712 or its submodules",
+      "audit_status": "server-side implementation, deployment, authorization, storage, retention and logging are unverified",
+      "ci_behavior": "no diagnostic upload is made by CI; client-side security checks remain required"
+    }
   ]
 }

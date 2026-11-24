@@ -33,6 +33,22 @@ opt-in diagnostic and travel with a log only when the player sends that log.
 These are user-triggered diagnostic uploads, so this review does not describe
 the app as having no telemetry or no outbound data.
 
+The v0.1.712 tag does not contain `bcd-logs/worker/worker.js`, its deployment
+configuration, or its Worker tests; the paths are also absent from `.gitmodules`.
+The repository's CI checks therefore continue to inspect the client-side
+scrubbing, data fields, size limits, explicit user actions, screenshot handling,
+and credential redaction, while printing an `UNVERIFIED` result for the missing
+server checks. The external Worker implementation, authorization, storage,
+retention, access logging, and deployed version cannot be established from this
+checkout. This build does not make a server-side privacy or security claim for
+that service, and no CI step uploads logs, feedback, screenshots, or credentials.
+The external Worker is not represented as a source component in the SBOM.
+The operator-side `tools/pull-logs.py` helper referenced by several baseline
+host tests is also absent from this tag. CI does not need or execute that helper;
+its download, local-file handling, and key-redaction behavior are therefore
+reported as `UNVERIFIED` rather than inferred from tests of code that is not
+available.
+
 Screenshots are created by the app. The Photos integration requests add-only
 access; the source does not request photo-library read access. Files and external
 drive access are mediated by the app's file-selection flows. Existing checks
