@@ -877,7 +877,7 @@ if docs_path.is_file():
                             'UIRequiresFullScreen'):
         check(name in docs, f'docs/KEYBOARD_MOUSE.md mentions {name}')
 else:
-    print('SKIP: docs/KEYBOARD_MOUSE.md is absent (the public export has no docs/)')
+    print('UNVERIFIED: docs/KEYBOARD_MOUSE.md is absent from v0.1.712; hardware input source and behavior checks still run')
 
 # madeira-bcd 2026-10-18: the absolute route maps like a touch, the drawn cursor scales
 # by the live monitor, the lock is checked with iPadOS, the overlay window lets the

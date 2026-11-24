@@ -221,7 +221,7 @@ require('if remember { var played = entry; played.lastPlayed = Date(); save(play
 dock_entry = block(onboarding, 'static func dockSession(')
 require('entry.desktop = true' in dock_entry and 'save(' not in dock_entry, 'the Dock session entry is a desktop session, never saved')
 if docs is None:
-    print('SKIP: docs/LIBRARY.md is absent (the public export has no docs/)')
+    print('UNVERIFIED: docs/LIBRARY.md is absent from v0.1.712; onboarding source and behavior checks still run')
 else:
     require('MADEIRA_ONBOARDING' in docs and '## First-run setup' in docs,
             'docs/LIBRARY.md documents setup and its switch')

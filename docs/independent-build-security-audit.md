@@ -55,6 +55,13 @@ checks; only the missing operator parser's rendering of trace facts is
 absent, so its exception grouping and sorting behavior cannot be checked from
 this tag; CI reports that utility as `UNVERIFIED`. The app's session recorder,
 session calculations, log scrubbing, and trace upload checks remain active.
+The tag also omits `docs/ITCH.md`; store-specific documentation assertions are
+`UNVERIFIED`, while the itch.io source, Keychain handling, credential
+redaction, network guards and archive behavior are checked from code.
+The public export omits several other feature guides (`docs/EA.md`,
+`docs/VULKAN.md`, `docs/STEAM_DESKTOP.md`, `docs/STEAM_LIBRARY.md`,
+`docs/BINARIES-WOW64.md`, `docs/LIBRARY.md` and `docs/KEYBOARD_MOUSE.md`). CI reports each documentation-only assertion as
+`UNVERIFIED`; source, runtime-fixture, privacy and build checks remain active.
 
 Screenshots are created by the app. The Photos integration requests add-only
 access; the source does not request photo-library read access. Files and external

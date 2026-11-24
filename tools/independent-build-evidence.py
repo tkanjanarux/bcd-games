@@ -236,6 +236,26 @@ def preflight(out: Path) -> None:
         cluster_test = ROOT / "tests/host/check-cluster-logs.py"
         if "operator-side `tools/cluster-logs.py` triage program" not in audit or not cluster_test.is_file() or "UNVERIFIED: tools/cluster-logs.py is absent" not in cluster_test.read_text():
             fail("the absent log-triage operator utility must remain explicitly unverified")
+    documentation_tests = {
+        "docs/ITCH.md": ("check-itch.py",),
+        "docs/EA.md": ("check-ea.py",),
+        "docs/VULKAN.md": ("check-moltenvk-patched.py", "check-vulkan-wow64.py", "check-kk-lsfg.py", "check-kk-vt-interp.py"),
+        "docs/STEAM_DESKTOP.md": ("check-steam-desktop.py",),
+        "docs/STEAM_LIBRARY.md": ("check-steam-cm-transport.py",),
+        "docs/BINARIES-WOW64.md": ("check-system32-x86-tools.py",),
+        "docs/LIBRARY.md": ("check-onboarding.py",),
+        "docs/KEYBOARD_MOUSE.md": ("check-hardware-input.py",),
+    }
+    declared = {item.get("path") for item in lock.get("unavailable_documentation", [])}
+    for rel, test_names in documentation_tests.items():
+        if (ROOT / rel).exists():
+            continue
+        if rel not in declared or f"`{rel}`" not in audit:
+            fail(f"the absent documentation {rel} must be inventoried in the security audit")
+        for name in test_names:
+            test = ROOT / "tests/host" / name
+            if not test.is_file() or f"UNVERIFIED: {rel} is absent" not in test.read_text():
+                fail(f"the {name} documentation-only assertion must be disclosed without suppressing source checks")
     verify_pinned_input_references(lock)
 
     submodule_status = subprocess.check_output(

@@ -288,8 +288,12 @@ vtlive = (R / "app/Madeira/BCDVTInterpLive.swift").read_text()
 check("the app: one frame generator a session (Apple interpolation stays off when Lossless Scaling started for the session)",
       "guard !lossless else" in plain and 'static let losslessKosmicKrispVariable = "MADEIRA_LSFG_HOST_CTL"' in plain
       and "getenv(kosmickrisp ? BCDVTInterp.losslessKosmicKrispVariable : BCDVTInterp.losslessVariable) != nil" in vtlive)
-doc = (R / "docs/VULKAN.md").read_text()
-check("docs/VULKAN.md has the section", "Lossless Scaling for Vulkan games" in doc and "wsi_common_metal_lsfg.m" in doc)
+doc_path = R / "docs/VULKAN.md"
+if doc_path.is_file():
+    doc = doc_path.read_text()
+    check("docs/VULKAN.md has the section", "Lossless Scaling for Vulkan games" in doc and "wsi_common_metal_lsfg.m" in doc)
+else:
+    print("UNVERIFIED: docs/VULKAN.md is absent from v0.1.712; app and KosmicKrisp source checks still run")
 wf = (R / ".github/workflows/build-ipa.yml").read_text()
 check("CI runs this check before KosmicKrisp is built", "python3 tests/host/check-kk-lsfg.py" in wf
       and wf.index("python3 tests/host/check-kk-lsfg.py") < wf.index("run: bash build/mesa-ios/build-kosmickrisp-bcd.sh"))

@@ -221,5 +221,47 @@
       "status": "absent from v0.1.712",
       "checks": "operator-side log triage, exception grouping and sorting tests are UNVERIFIED"
     }
+  ],
+  "unavailable_documentation": [
+    {
+      "path": "docs/ITCH.md",
+      "status": "absent from v0.1.712",
+      "checks": "store-specific documentation assertions are UNVERIFIED; source, Keychain, credential and archive checks remain active"
+    },
+    {
+      "path": "docs/EA.md",
+      "status": "absent from v0.1.712",
+      "checks": "EA documentation assertions are UNVERIFIED; source, Keychain, token-redaction and local-service checks remain active"
+    },
+    {
+      "path": "docs/VULKAN.md",
+      "status": "absent from v0.1.712",
+      "checks": "Vulkan documentation assertions are UNVERIFIED; source, pinned dependency, farm and runtime checks remain active"
+    },
+    {
+      "path": "docs/STEAM_DESKTOP.md",
+      "status": "absent from v0.1.712",
+      "checks": "Steam Desktop documentation assertions are UNVERIFIED; source and runtime-fixture checks remain active"
+    },
+    {
+      "path": "docs/STEAM_LIBRARY.md",
+      "status": "absent from v0.1.712",
+      "checks": "Steam client transport documentation assertions are UNVERIFIED; source credits and transport checks remain active"
+    },
+    {
+      "path": "docs/BINARIES-WOW64.md",
+      "status": "absent from v0.1.712",
+      "checks": "the farm inventory documentation assertion is UNVERIFIED; Wine source and system32 link checks remain active"
+    },
+    {
+      "path": "docs/LIBRARY.md",
+      "status": "absent from v0.1.712",
+      "checks": "onboarding documentation assertions are UNVERIFIED; source and behavior checks remain active"
+    },
+    {
+      "path": "docs/KEYBOARD_MOUSE.md",
+      "status": "absent from v0.1.712",
+      "checks": "hardware input documentation assertions are UNVERIFIED; source and behavior checks remain active"
+    }
   ]
 }
