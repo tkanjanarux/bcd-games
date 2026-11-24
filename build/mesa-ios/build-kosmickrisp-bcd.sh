@@ -79,12 +79,8 @@ checkout() {
     [ "$(git -C "$dest" rev-parse HEAD)" = "$commit" ] || { echo "Wrong source version at $dest; remove the folder" >&2; exit 1; }
 }
 
-# Python tools (meson >= 1.9.1, mako, pyyaml, packaging, ninja), as build.sh makes them.
-if [ ! -x "$VENV/bin/meson" ] || [ ! -x "$VENV/bin/ninja" ]; then
-    echo "Python build tools not found at $VENV; creating it"
-    python3 -m venv "$VENV"
-    "$VENV/bin/pip" install -q meson mako pyyaml packaging ninja
-fi
+# Python tools use the same wheel hashes as build.sh and the CI preflight step.
+"$R/tools/install-mesa-python-tools.sh" "$VENV"
 export PATH="$VENV/bin:$PATH"
 
 # Host libraries of mesa_clc, per LLVM major version.

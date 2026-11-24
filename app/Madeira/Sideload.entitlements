@@ -2,16 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- What the unsigned IPA asks a sideloader for, through an ad-hoc signature
-	     (tools/ota-variants.py fakesign). SideStore/AltStore sign with the
-	     profile's entitlements filtered by the app's own, so an entitlement the
-	     IPA does not carry is dropped even when GetMoreRam has enabled it on the
-	     App ID. Only what a free or paid sideloading profile can grant:
-	     Madeira.entitlements' increased-debugging-memory-limit (development
-	     profiles only) and allow-jit (macOS only) stay out. -->
+	<!-- Independent unsigned build: retain the requested memory, virtual-address,
+	     and JIT entitlements in its ad-hoc signature for inspection. This IPA has
+	     no provisioning profile or team identity; device acceptance is not
+	     asserted by this build. -->
 	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
 	<true/>
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
 	<key>get-task-allow</key>
 	<true/>

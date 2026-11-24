@@ -57,11 +57,7 @@ if [ ! -f "$SRC/meson.build" ]; then
     tar -xf "$tar_dir/mesa-25.0.7.tar.xz" -C "$tar_dir"
     [ "$tar_dir/mesa-25.0.7" = "$SRC" ] || mv "$tar_dir/mesa-25.0.7" "$SRC"
 fi
-if [ ! -x "$VENV/bin/meson" ] || [ ! -x "$VENV/bin/ninja" ]; then
-    echo "Python build tools not found at $VENV; creating it"
-    python3 -m venv "$VENV"
-    "$VENV/bin/pip" install -q meson mako pyyaml packaging ninja
-fi
+"$R/tools/install-mesa-python-tools.sh" "$VENV"
 if [ ! -d "$MVK" ]; then
     echo "MoltenVK not found at $MVK; run build/moltenvk-ios/build.sh first" >&2
     exit 1

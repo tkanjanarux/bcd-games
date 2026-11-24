@@ -6,55 +6,60 @@ name: Build Madeira IPA (unsigned)
 
 on:
   workflow_dispatch:
-  # Paused while builds run on the owner's Mac (2026-10-13). To build on push
-  # to main again, uncomment the three lines below.
-  # push:
-  #   branches: [main]
-  #   paths: [".github/workflows/build-ipa.yml"]
-
-# A push and a manual dispatch seconds apart used to start two parallel
-# multi-hour macOS jobs on the same commit.
+  push:
+    branches: [codex/independent-build-v0.1.712]
 concurrency:
-  group: build-ipa
+  group: build-ipa-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    # madeira-bcd: runs only in the owner's repository; a fork's run is skipped.
-    if: github.repository == 'thebcd69/madeira-bcd'
-    runs-on: macos-15
-    # contents: write only so the token can see DRAFT releases, which is where
-    # the Metal Shader Converter installer is kept (drafts are not public).
-    # Nothing in this job creates, edits or pushes anything.
+    runs-on: xcode-27
     permissions:
-      contents: write
-      actions: read
+      contents: read
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
 
-      # ContentView.swift uses glassEffect(.regular, in:), which needs the
-      # iOS 26 SDK. The runner defaults to Xcode 16.4 (iOS 18.5), so pick the
-      # newest Xcode installed rather than whatever xcode-select points at.
-      - name: Select newest Xcode
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: "3.14.0"
+
+      - name: Start from an empty output directory
+        run: rm -rf build-out build-evidence
+
+      - name: Verify baseline, build inputs, and security checks
+        run: python3 tools/independent-build-evidence.py preflight --out build-evidence
+
+      # Use the public-preview Xcode 27 macOS image; fail closed if its iOS SDK
+      # is not 27.x. The exact image and SDK versions are recorded in evidence.
+      - name: Select Xcode 27 and verify the iOS SDK
         shell: bash
         run: |
-          echo "-- installed Xcodes --"
-          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none beyond the default)"
-          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$NEWEST" ]; then
-            sudo xcode-select -s "$NEWEST/Contents/Developer"
-            echo "::notice::selected $NEWEST"
+          XCODE=$(python3 - <<'PYCODE'
+          import glob, re
+          candidates = glob.glob('/Applications/Xcode_27*.app')
+          def version(path):
+              match = re.search(r'Xcode_(27(?:\.\d+)+)\.app$', path)
+              return tuple(map(int, match.group(1).split('.'))) if match else ()
+          candidates = [path for path in candidates if version(path)]
+          print(max(candidates, key=version) if candidates else '')
+          PYCODE
+          )
+          if [ -z "$XCODE" ]; then
+            echo "::error::the xcode-27 runner has no Xcode 27 installation"
+            exit 1
           fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $SDK"
+          [[ "$SDK" == 27.* ]] || { echo "::error::expected iOS 27 SDK, got $SDK"; exit 1; }
 
-      # madeira-bcd FORK-ONLY: one build-number sequence across GitHub Actions
-      # and the owner's Mac (owner's decision 2026-10-13). This build's number is
-      # in docs/local-build/BUILD-NUMBER: the Mac's run.sh, or a cloud session
-      # before it dispatches this workflow, commits it as "Build N (...)".
-      # GitHub's own run_number does not follow that sequence, so nothing below
-      # uses it.
       - name: Build number
         id: bn
         shell: bash
@@ -1359,10 +1364,10 @@ jobs:
 
       - name: Restore native wine tools
         id: winenative
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine/build-native
-          key: wine-native-v1-${{ steps.winerev.outputs.sha }}
+          key: wine-native-v1-${{ steps.winerev.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: "Build native wine (for host-side tools: widl/wrc/wmc)"
         if: steps.winenative.outputs.cache-hit != 'true'
@@ -1385,10 +1390,10 @@ jobs:
       # half-built tree cannot be cached and then trusted on every later run.
       - name: Save native wine tools
         if: steps.winenative.outputs.cache-hit != 'true' && hashFiles('wine/build-native/tools/widl/widl') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine/build-native
-          key: wine-native-v1-${{ steps.winerev.outputs.sha }}
+          key: wine-native-v1-${{ steps.winerev.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Diagnose native wine tools build
         run: |
@@ -1497,8 +1502,14 @@ jobs:
       - name: Check the WMA decoder transform
         run: python3 tests/host/check-wma-decoder.py
 
-      - name: Clone freetype 2.13.3
-        run: git clone --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype.git research/freetype
+      - name: Fetch pinned FreeType source
+        shell: bash
+        run: |
+          rm -rf research/freetype
+          git clone --filter=blob:none --no-checkout https://github.com/freetype/freetype.git research/freetype
+          git -C research/freetype fetch --depth 1 origin 42608f77f20749dd6ddc9e0536788eaad70ea4b5
+          git -C research/freetype checkout --detach 42608f77f20749dd6ddc9e0536788eaad70ea4b5
+          test "$(git -C research/freetype rev-parse HEAD)" = 42608f77f20749dd6ddc9e0536788eaad70ea4b5
 
       - name: Build freetype-ios
         run: bash build/freetype-ios/build.sh
@@ -1509,13 +1520,13 @@ jobs:
       # prefix, so do it here: GMP -> nettle/hogweed -> GnuTLS, all static.
       - name: Restore GnuTLS iOS stack
         id: gnutlscache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             toolchains/gnutls-ios
             build/gnutls-ios/obj
             build/gnutls-ios/src
-          key: gnutls-ios-gmp6.3.0-nettle3.10.1-gnutls3.8.9-v1
+          key: gnutls-ios-gmp6.3.0-nettle3.10.1-gnutls3.8.9-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build GnuTLS stack for iOS
         if: steps.gnutlscache.outputs.cache-hit != 'true'
@@ -1536,23 +1547,23 @@ jobs:
 
       - name: Save GnuTLS iOS stack
         if: steps.gnutlscache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             toolchains/gnutls-ios
             build/gnutls-ios/obj
             build/gnutls-ios/src
-          key: gnutls-ios-gmp6.3.0-nettle3.10.1-gnutls3.8.9-v1
+          key: gnutls-ios-gmp6.3.0-nettle3.10.1-gnutls3.8.9-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Upstream's winegstreamer unix side (build/ntdll-unix) compiles against
       # toolchains/ffmpeg-ios, and the app target links the four archives from
       # app/Madeira/. The source tarball is tracked; cache the result.
       - name: Restore FFmpeg iOS
         id: ffmpegcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: toolchains/ffmpeg-ios
-          key: ffmpeg-ios-${{ hashFiles('build/ffmpeg/build.sh', 'build/ffmpeg/src/SHA256SUMS') }}
+          key: ffmpeg-ios-${{ hashFiles('build/ffmpeg/build.sh', 'build/ffmpeg/src/SHA256SUMS') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build FFmpeg for iOS
         shell: bash
@@ -1569,10 +1580,10 @@ jobs:
 
       - name: Save FFmpeg iOS
         if: steps.ffmpegcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: toolchains/ffmpeg-ios
-          key: ffmpeg-ios-${{ hashFiles('build/ffmpeg/build.sh', 'build/ffmpeg/src/SHA256SUMS') }}
+          key: ffmpeg-ios-${{ hashFiles('build/ffmpeg/build.sh', 'build/ffmpeg/src/SHA256SUMS') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # madeira-bcd (OpenGL, build 632; docs/OPENGL.md): the desktop-OpenGL backend of the winios GL driver, MoltenVK (Vulkan on Metal) and Mesa's
       # OSMesa + Zink, as two dylibs in app/Madeira/gl/ (build/moltenvk-ios, build/mesa-ios) that the Xcode phase signs. A game uses them only when its
@@ -1581,7 +1592,7 @@ jobs:
       # (tools/check-opengl-shipped.py, below).
       - name: Restore OpenGL libraries (MoltenVK, Mesa OSMesa + Zink)
         id: glcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/*.dylib
@@ -1591,7 +1602,7 @@ jobs:
             app/Madeira/licenses/SPIRV-Cross-Apache-2.0.txt
             app/Madeira/licenses/SPIRV-Tools-Apache-2.0.txt
             app/Madeira/licenses/cereal-BSD-3-Clause.txt
-          key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}
+          key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build MoltenVK for iOS
         if: steps.glcache.outputs.cache-hit != 'true'
@@ -1603,7 +1614,7 @@ jobs:
 
       - name: Save OpenGL libraries
         if: steps.glcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/*.dylib
@@ -1613,7 +1624,7 @@ jobs:
             app/Madeira/licenses/SPIRV-Cross-Apache-2.0.txt
             app/Madeira/licenses/SPIRV-Tools-Apache-2.0.txt
             app/Madeira/licenses/cereal-BSD-3-Clause.txt
-          key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}
+          key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # madeira-bcd (KosmicKrisp; docs/VULKAN.md): Mesa's Vulkan on Metal 4 as a third dylib in app/Madeira/gl/, for a game whose own file says
       # vulkan = kosmickrisp (iOS 26 and a Metal 4 GPU; every other game and every other device never loads it). build-kosmickrisp-bcd.sh fetches the
@@ -1634,13 +1645,13 @@ jobs:
         run: python3 tests/host/check-kk-lsfg.py
       - name: Restore KosmicKrisp (Mesa's Vulkan on Metal 4)
         id: kkcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/libvulkan_kosmickrisp.dylib
             app/Madeira/gl/libvulkan_kosmickrisp.version
             app/Madeira/licenses/KosmicKrisp-Mesa-license.rst
-          key: kosmickrisp-v1-${{ hashFiles('build/mesa-ios/build-kosmickrisp-bcd.sh', 'build/mesa-ios/build-kosmickrisp.sh', 'build/mesa-ios/build-playport-kosmickrisp.sh', 'build/mesa-ios/fetch-playport.py', 'build/mesa-ios/kk-stale-source.sh', 'build/mesa-ios/kosmickrisp-ios-arm64.cross', 'build/mesa-ios/kosmickrisp-patches/*.patch', 'build/mesa-ios/playport-patches/*.patch') }}
+          key: kosmickrisp-v1-${{ hashFiles('build/mesa-ios/build-kosmickrisp-bcd.sh', 'build/mesa-ios/build-kosmickrisp.sh', 'build/mesa-ios/build-playport-kosmickrisp.sh', 'build/mesa-ios/fetch-playport.py', 'build/mesa-ios/kk-stale-source.sh', 'build/mesa-ios/kosmickrisp-ios-arm64.cross', 'build/mesa-ios/kosmickrisp-patches/*.patch', 'build/mesa-ios/playport-patches/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build KosmicKrisp for iOS
         id: kkbuild
@@ -1650,13 +1661,13 @@ jobs:
 
       - name: Save KosmicKrisp
         if: steps.kkcache.outputs.cache-hit != 'true' && steps.kkbuild.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/libvulkan_kosmickrisp.dylib
             app/Madeira/gl/libvulkan_kosmickrisp.version
             app/Madeira/licenses/KosmicKrisp-Mesa-license.rst
-          key: kosmickrisp-v1-${{ hashFiles('build/mesa-ios/build-kosmickrisp-bcd.sh', 'build/mesa-ios/build-kosmickrisp.sh', 'build/mesa-ios/build-playport-kosmickrisp.sh', 'build/mesa-ios/fetch-playport.py', 'build/mesa-ios/kk-stale-source.sh', 'build/mesa-ios/kosmickrisp-ios-arm64.cross', 'build/mesa-ios/kosmickrisp-patches/*.patch', 'build/mesa-ios/playport-patches/*.patch') }}
+          key: kosmickrisp-v1-${{ hashFiles('build/mesa-ios/build-kosmickrisp-bcd.sh', 'build/mesa-ios/build-kosmickrisp.sh', 'build/mesa-ios/build-playport-kosmickrisp.sh', 'build/mesa-ios/fetch-playport.py', 'build/mesa-ios/kk-stale-source.sh', 'build/mesa-ios/kosmickrisp-ios-arm64.cross', 'build/mesa-ios/kosmickrisp-patches/*.patch', 'build/mesa-ios/playport-patches/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A build whose KosmicKrisp step failed must not carry a library of an earlier recipe: the package then has none.
       - name: Drop a stale KosmicKrisp after a failed build
@@ -1696,12 +1707,12 @@ jobs:
       # MoltenVK instead). After the OpenGL and KosmicKrisp steps, so that neither cached set depends on it.
       - name: Restore patched MoltenVK (second Vulkan library)
         id: mvkpcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/libMoltenVK_patched.dylib
             app/Madeira/gl/libMoltenVK_patched.version
-          key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}
+          key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build patched MoltenVK for iOS
         id: mvkpbuild
@@ -1711,12 +1722,12 @@ jobs:
 
       - name: Save patched MoltenVK
         if: steps.mvkpcache.outputs.cache-hit != 'true' && steps.mvkpbuild.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/gl/libMoltenVK_patched.dylib
             app/Madeira/gl/libMoltenVK_patched.version
-          key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}
+          key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A build whose patched MoltenVK step failed must not carry a library of an earlier recipe (or a half-written one): the package then has none.
       - name: Drop a stale patched MoltenVK after a failed build
@@ -2637,67 +2648,54 @@ jobs:
         continue-on-error: true
         run: bash build/win32u-unix/build.sh 2>&1 | tee "$GITHUB_WORKSPACE/win32u.log"; exit ${PIPESTATUS[0]}
 
-      - name: Restore llvm-mingw
-        id: mingwcache
-        uses: actions/cache/restore@v4
-        with:
-          path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
-          key: llvm-mingw-20260421-ucrt-macos-universal
-
-      - name: Install ninja/meson and fetch llvm-mingw
+      - name: Install hash-locked Mesa build tools and fetch llvm-mingw
         shell: bash
         run: |
-          brew install ninja meson
           mkdir -p toolchains
+          VENV="$GITHUB_WORKSPACE/toolchains/mesa-venv"
+          tools/install-mesa-python-tools.sh "$VENV"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          python3 --version
+          "$VENV/bin/meson" --version
+          "$VENV/bin/ninja" --version
           MINGW=toolchains/llvm-mingw-20260421-ucrt-macos-universal
-          if [ -x "$MINGW/bin/arm64ec-w64-mingw32-clang++" ]; then
-            echo "::notice::llvm-mingw restored from cache"
-            echo "MINGW_OK=1" >> "$GITHUB_ENV"
-          else
-            # Piping curl into tar hid a failed download. Run 71 received 92
-            # bytes of error page, tar said "Unrecognized archive format", the
-            # step exited 0, and the IPA shipped the committed xtajit64.dll
-            # instead of ours -- with the job green throughout. Download to a
-            # file, retry, and check what arrived before unpacking.
-            URL=https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz
-            for try in 1 2 3; do
-              curl -fL --retry 3 --retry-delay 5 -o /tmp/mingw.tar.xz "$URL" && break
-              echo "download attempt $try failed"
-              sleep $((try * 5))
-            done
-            SZ=$(wc -c < /tmp/mingw.tar.xz 2>/dev/null || echo 0)
-            echo "downloaded $SZ bytes"
-            if [ "$SZ" -lt 10000000 ]; then
-              echo "::error::llvm-mingw download failed -- $SZ bytes is not an archive; \
-          the IPA will carry the COMMITTED xtajit64.dll, not the one we build"
-            else
-              tar -xJf /tmp/mingw.tar.xz -C toolchains/
-              echo "::notice::llvm-mingw unpacked ($SZ bytes)"
-              echo "MINGW_OK=1" >> "$GITHUB_ENV"
-            fi
+          rm -rf "$MINGW"
+          # Never trust a prebuilt toolchain cache. Download the exact pinned
+          # archive and verify it before extracting or invoking its compilers.
+          URL=https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz
+          for try in 1 2 3; do
+            curl -fL --retry 3 --retry-delay 5 -o /tmp/mingw.tar.xz "$URL" && break
+            echo "download attempt $try failed"
+            sleep $((try * 5))
+          done
+          SZ=$(wc -c < /tmp/mingw.tar.xz 2>/dev/null || echo 0)
+          echo "downloaded $SZ bytes"
+          if [ "$SZ" -lt 10000000 ]; then
+            echo "::error::llvm-mingw download failed -- $SZ bytes is not an archive"
+            exit 1
           fi
+          GOT=$(shasum -a 256 /tmp/mingw.tar.xz | awk '{print $1}')
+          WANT=bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7
+          [ "$GOT" = "$WANT" ] || { echo "::error::llvm-mingw SHA-256 mismatch: $GOT"; exit 1; }
+          tar -xJf /tmp/mingw.tar.xz -C toolchains/
+          test -x "$MINGW/bin/arm64ec-w64-mingw32-clang++"
+          echo "::notice::llvm-mingw hash verified and unpacked ($SZ bytes)"
+          echo "MINGW_OK=1" >> "$GITHUB_ENV"
           ls toolchains/
-
-      - name: Save llvm-mingw
-        if: env.MINGW_OK == '1' && steps.mingwcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
-          key: llvm-mingw-20260421-ucrt-macos-universal
 
       # Bundle stock GC64 LuaJIT for LÖVE games and a second variant for
       # games whose Lua scripts use C-style comments. The loader selects the
       # variant for the session (build/wineserver/luajit_compat.c).
       - name: Restore GC64 LuaJIT (LOVE games)
         id: lovecache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/compat/love/lua51.dll
             app/Madeira/compat/love/lua51.dll.version
             app/Madeira/compat/lua-c-comments/lua51.dll
             app/Madeira/licenses/LuaJIT-MIT.txt
-          key: luajit-gc64-v1-${{ hashFiles('build/luajit-x64/build.sh', 'build/luajit-x64/*.patch') }}
+          key: luajit-gc64-v1-${{ hashFiles('build/luajit-x64/build.sh', 'build/luajit-x64/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build the GC64 LuaJIT (LOVE games)
         if: steps.lovecache.outputs.cache-hit != 'true' && env.MINGW_OK == '1'
@@ -2706,14 +2704,14 @@ jobs:
 
       - name: Save GC64 LuaJIT (LOVE games)
         if: steps.lovecache.outputs.cache-hit != 'true' && hashFiles('app/Madeira/compat/love/lua51.dll') != '' && hashFiles('app/Madeira/compat/lua-c-comments/lua51.dll') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             app/Madeira/compat/love/lua51.dll
             app/Madeira/compat/love/lua51.dll.version
             app/Madeira/compat/lua-c-comments/lua51.dll
             app/Madeira/licenses/LuaJIT-MIT.txt
-          key: luajit-gc64-v1-${{ hashFiles('build/luajit-x64/build.sh', 'build/luajit-x64/*.patch') }}
+          key: luajit-gc64-v1-${{ hashFiles('build/luajit-x64/build.sh', 'build/luajit-x64/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # env.MADEIRA_DXGI_BUDGET_EVENTS = 1 (opt-in): the budget-change events
       # tools/patch-dxgi-budget-events.py adds to dxgi-src.dll, checked (and
@@ -2823,10 +2821,10 @@ jobs:
 
       - name: Restore FEX iOS build
         id: fexcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-ios
-          key: fex-ios-${{ steps.fexrev.outputs.sha }}-v3
+          key: fex-ios-${{ steps.fexrev.outputs.sha }}-v3-${{ github.run_id }}-${{ github.run_attempt }}
 
       # FEX 0f8edf8 AllocatorHooks.cpp defines IOS_RPM_GUARD() only inside
       # #ifdef ENABLE_FEX_ALLOCATOR, then uses it (malloc_usable_size) in the
@@ -2932,10 +2930,10 @@ jobs:
       # under -v1, and a cache hit skips the build step for good.
       - name: Save FEX iOS build
         if: steps.fexcache.outputs.cache-hit != 'true' && hashFiles('FEX/build-ios/FEXCore/Source/libFEXCore.a') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-ios
-          key: fex-ios-${{ steps.fexrev.outputs.sha }}-v3
+          key: fex-ios-${{ steps.fexrev.outputs.sha }}-v3-${{ github.run_id }}-${{ github.run_attempt }}
 
       # xtajit64.dll (FEX's ARM64EC module) with the MADEIRA_FEX_AVX opt-in:
       # games built for AVX (Ghost of Tsushima) die on their first VEX
@@ -2943,10 +2941,10 @@ jobs:
       # unpatched rebuild matches it first.
       - name: Restore FEX ARM64EC build
         id: fexeccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-arm64ec
-          key: fex-arm64ec-${{ steps.fexrev.outputs.sha }}-v2
+          key: fex-arm64ec-${{ steps.fexrev.outputs.sha }}-v2-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build xtajit64.dll (FEX fixes, AVX opt-in)
         if: env.MINGW_OK == '1'
@@ -2955,20 +2953,20 @@ jobs:
 
       - name: Save FEX ARM64EC build
         if: steps.fexeccache.outputs.cache-hit != 'true' && hashFiles('FEX/build-arm64ec/Bin/libarm64ecfex.dll') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-arm64ec
-          key: fex-arm64ec-${{ steps.fexrev.outputs.sha }}-v2
+          key: fex-arm64ec-${{ steps.fexrev.outputs.sha }}-v2-${{ github.run_id }}-${{ github.run_attempt }}
 
       # madeira-bcd: FEX's aarch64 WOW64 module (xtajit.dll, the 32-bit CPU
       # backend) was only ever built by hand (build/fex-wow64/build.sh). Built
       # here with the CPUID index fix; on failure the committed module stays.
       - name: Restore FEX WOW64 build
         id: fexwowcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-wow64
-          key: fex-wow64-${{ steps.fexrev.outputs.sha }}-v1
+          key: fex-wow64-${{ steps.fexrev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build xtajit.dll (WOW64, CPUID index fix)
         if: env.MINGW_OK == '1'
@@ -2977,27 +2975,30 @@ jobs:
 
       - name: Save FEX WOW64 build
         if: steps.fexwowcache.outputs.cache-hit != 'true' && hashFiles('FEX/build-wow64/Bin/libwow64fex.dll') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: FEX/build-wow64
-          key: fex-wow64-${{ steps.fexrev.outputs.sha }}-v1
+          key: fex-wow64-${{ steps.fexrev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Restore LLVM 15.0.7 iOS build
         id: llvmcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             toolchains/llvm-ios-build
             toolchains/llvm-project
-          key: llvm-15.0.7-ios-v2
+          key: llvm-15.0.7-ios-v2-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build LLVM 15.0.7 for iOS (two-stage, per build/dxmt-ios/README.md)
         if: steps.llvmcache.outputs.cache-hit != 'true'
         continue-on-error: true
         shell: bash
         run: |
-          git clone --depth 1 --branch llvmorg-15.0.7 \
-            https://github.com/llvm/llvm-project.git toolchains/llvm-project
+          rm -rf toolchains/llvm-project
+          git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git toolchains/llvm-project
+          git -C toolchains/llvm-project fetch --depth 1 origin 8dfdcc7b7bf66834a761bd8de445840ef68e4d1a
+          git -C toolchains/llvm-project checkout --detach 8dfdcc7b7bf66834a761bd8de445840ef68e4d1a
+          test "$(git -C toolchains/llvm-project rev-parse HEAD)" = 8dfdcc7b7bf66834a761bd8de445840ef68e4d1a
           # README: Apple ld rejects --gc-sections; make the Darwin branch cover iOS
           sed -i '' 's/MATCHES "Darwin"/MATCHES "Darwin|iOS"/' \
             toolchains/llvm-project/llvm/cmake/modules/AddLLVM.cmake
@@ -3065,12 +3066,12 @@ jobs:
 
       - name: Save LLVM 15.0.7 iOS build
         if: steps.llvmcache.outputs.cache-hit != 'true' && hashFiles('toolchains/llvm-ios-build/lib/libLLVMCore.a') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: |
             toolchains/llvm-ios-build
             toolchains/llvm-project
-          key: llvm-15.0.7-ios-v2
+          key: llvm-15.0.7-ios-v2-${{ github.run_id }}-${{ github.run_attempt }}
 
       # The .metal shaders below need a Metal compiler. `xcodebuild
       # -downloadComponent` only exists on Xcode 16+; on older Xcode it exits 64
@@ -3115,13 +3116,13 @@ jobs:
           done
           ls -la
 
-      # Metal Shader Converter, the way upstream ships it (owner's decision
-      # 2026-10-07, replacing the msc-private draft release): the public headers
-      # (Apache-2.0) are vendored in madeira-d3d12/third_party/metal-shader-converter
-      # and the iOS library is tracked at app/Madeira/d3d12/libmetalirconverter.dylib
-      # (Apple's agreement, app/Madeira/d3d12/NOTICE.txt); build/madeira-d3d12/deps.sh
-      # checks both against their pinned hashes. A missing or mismatched converter
-      # would build the stub that draws nothing in any D3D12 game, so fail instead.
+      # The Apple-signed iOS library is fetched from a content-pinned mirror
+      # because Apple's developer portal requires interactive sign-in. Verify
+      # its pinned hash, Apple signature, and exact match to the vendored headers.
+      - name: Fetch and verify Apple Metal Shader Converter
+        shell: bash
+        run: bash tools/fetch-msc-pinned.sh
+
       - name: Locate Metal Shader Converter headers
         shell: bash
         run: |
@@ -3132,7 +3133,7 @@ jobs:
           fi
           echo "MADEIRA_MSC_INCLUDE=$INC" >> "$GITHUB_ENV"
           V=$(grep -E "define IR_VERSION_(MAJOR|MINOR|PATCH)" "$INC/metal_irconverter/ir_version.h" | awk '{print $3}' | paste -sd. -)
-          echo "::notice::Metal Shader Converter $V from the repository: headers vendored, iOS library tracked"
+          echo "::notice::Metal Shader Converter $V: headers match; Apple-signed iOS library verified"
 
       # Upstream's Madeira Dock (Steam library helper): dockhost.exe is a build
       # output; without it the Dock stays hidden, so a failure here only warns.
@@ -3940,10 +3941,10 @@ jobs:
 
       - name: Restore i386 farm
         id: i386cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: app/Madeira/i386-windows
-          key: ${{ steps.i386rev.outputs.key }}
+          key: ${{ steps.i386rev.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build i386 farm (WoW64)
         id: i386build
@@ -3958,10 +3959,10 @@ jobs:
 
       - name: Save i386 farm
         if: steps.i386cache.outputs.cache-hit != 'true' && steps.i386build.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: app/Madeira/i386-windows
-          key: ${{ steps.i386rev.outputs.key }}
+          key: ${{ steps.i386rev.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Put back the files patched for the i386 farm only (x64 machine answer)
         if: always()
@@ -5217,10 +5218,10 @@ jobs:
       # the wine submodule for arm64ec. Never replaces a shipped DLL.
       - name: Restore wine arm64ec build
         id: wineeccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine/build-arm64ec
-          key: wine-arm64ec-${{ steps.winerev.outputs.sha }}-v1
+          key: wine-arm64ec-${{ steps.winerev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build extra Wine DLLs for arm64ec
         continue-on-error: true
@@ -5277,10 +5278,10 @@ jobs:
       # so a new patch script recompiles its files and nothing else (a key that hashed the scripts would rebuild both trees, about nine minutes).
       - name: Restore the rebuilt 64-bit Wine set's build trees
         id: winefreshcache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine-fresh
-          key: wine-fresh-${{ steps.winerev.outputs.sha }}-v1
+          key: wine-fresh-${{ steps.winerev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Build 663 (lead): shell32 is left out. Its only change in the set is a NULL guard for a crash in a folder window
       # (tools/patch-wine-shell32-navpane-null.py), and it was 9.4 MB of the set's 20.5 MB compressed; the committed shell32.dll stays.
@@ -5293,10 +5294,10 @@ jobs:
       - name: Save the rebuilt 64-bit Wine set's build trees
         if: steps.winefreshcache.outputs.cache-hit != 'true' && hashFiles('wine-fresh/build-arm64ec/dlls/ntdll/arm64ec-windows/ntdll.dll') != ''
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine-fresh
-          key: wine-fresh-${{ steps.winerev.outputs.sha }}-v1
+          key: wine-fresh-${{ steps.winerev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify the rebuilt 64-bit Wine set
         run: python3 tools/check-wine-fresh-shipped.py app/Madeira
@@ -5313,10 +5314,10 @@ jobs:
       # current DLL on a hit too. A failure only loses the DLL; the check below then names the list line and rule that want it.
       - name: Restore dxcompiler.dll (DirectX Shader Compiler, x86-64)
         id: dxccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: build/dxc-win/out
-          key: dxc-win-x64-v1-${{ hashFiles('build/dxc-win/0001-mingw-w64-build.patch', 'build/dxc-win/mingw-x86_64.cmake', 'tools/build-dxcompiler.sh') }}
+          key: dxc-win-x64-v1-${{ hashFiles('build/dxc-win/0001-mingw-w64-build.patch', 'build/dxc-win/mingw-x86_64.cmake', 'tools/build-dxcompiler.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build dxcompiler.dll and ship it as dxcompiler-optin.dll
         if: env.MINGW_OK == '1'
@@ -5326,10 +5327,10 @@ jobs:
       - name: Save dxcompiler.dll
         if: steps.dxccache.outputs.cache-hit != 'true' && hashFiles('build/dxc-win/out/dxcompiler.dll') != ''
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: build/dxc-win/out
-          key: dxc-win-x64-v1-${{ hashFiles('build/dxc-win/0001-mingw-w64-build.patch', 'build/dxc-win/mingw-x86_64.cmake', 'tools/build-dxcompiler.sh') }}
+          key: dxc-win-x64-v1-${{ hashFiles('build/dxc-win/0001-mingw-w64-build.patch', 'build/dxc-win/mingw-x86_64.cmake', 'tools/build-dxcompiler.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # M1-S10 (build 708): icuuc-optin.dll and icuin-optin.dll, ICU4C 78.3 (Unicode licence) built for ARM64EC from the release tarball in Debian's
       # archive (SHA-256 checked; tools/build-icu-optin.sh) for Qt 6 programs. Only build/icu-win/out (the two stripped DLLs and their stamp, about
@@ -5337,10 +5338,10 @@ jobs:
       # The script ships the current DLLs on a hit too. A failure only loses the DLLs; the check below then names the list line and rule that want them.
       - name: Restore ICU (icuuc.dll and icuin.dll, ARM64EC)
         id: icucache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: build/icu-win/out
-          key: icu-win-arm64ec-v1-${{ hashFiles('tools/build-icu-optin.sh', 'build/icu-win/trim-data.py', 'build/icu-win/icu-probe.c', 'build/icu-win/icu-probe.expected', 'build/icu-win/check-icu-dlls.py', 'build/icu-win/ICU-LICENSE.txt') }}
+          key: icu-win-arm64ec-v1-${{ hashFiles('tools/build-icu-optin.sh', 'build/icu-win/trim-data.py', 'build/icu-win/icu-probe.c', 'build/icu-win/icu-probe.expected', 'build/icu-win/check-icu-dlls.py', 'build/icu-win/ICU-LICENSE.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build ICU and ship it as icuuc-optin.dll and icuin-optin.dll
         if: env.MINGW_OK == '1'
@@ -5350,10 +5351,10 @@ jobs:
       - name: Save ICU (icuuc.dll and icuin.dll, ARM64EC)
         if: steps.icucache.outputs.cache-hit != 'true' && hashFiles('build/icu-win/out/icuuc.dll') != ''
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: build/icu-win/out
-          key: icu-win-arm64ec-v1-${{ hashFiles('tools/build-icu-optin.sh', 'build/icu-win/trim-data.py', 'build/icu-win/icu-probe.c', 'build/icu-win/icu-probe.expected', 'build/icu-win/check-icu-dlls.py', 'build/icu-win/ICU-LICENSE.txt') }}
+          key: icu-win-arm64ec-v1-${{ hashFiles('tools/build-icu-optin.sh', 'build/icu-win/trim-data.py', 'build/icu-win/icu-probe.c', 'build/icu-win/icu-probe.expected', 'build/icu-win/check-icu-dlls.py', 'build/icu-win/ICU-LICENSE.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Round 624 (agent E2 S3): the step that builds the opt-in DLLs may fail without failing the build; a DLL a game list or an
       # auto-tune rule names in env.MADEIRA_OPTIN_DLLS (Glyphica's kernelbase-optin.dll, build 624) must not go missing silently.
@@ -5363,10 +5364,10 @@ jobs:
       - name: Save wine arm64ec build
         if: steps.wineeccache.outputs.cache-hit != 'true' && hashFiles('wine/build-arm64ec/dlls/msvcr80/arm64ec-windows/msvcr80.dll') != ''
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: wine/build-arm64ec
-          key: wine-arm64ec-${{ steps.winerev.outputs.sha }}-v1
+          key: wine-arm64ec-${{ steps.winerev.outputs.sha }}-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       # d3d10/avifil32/vulkan-1 stand-ins from Wine's .spec export lists:
       # Crysis Remastered imports all three and fails to load without them.
@@ -5651,6 +5652,9 @@ jobs:
             exit 0
           fi
           echo "downloaded $(wc -c < /tmp/vcr.exe | tr -d ' ') bytes"
+          VCR_SHA=$(shasum -a 256 /tmp/vcr.exe | awk '{print $1}')
+          VCR_WANT=cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b
+          [ "$VCR_SHA" = "$VCR_WANT" ] || { echo "::error::Microsoft x64 VC++ runtime SHA-256 mismatch: $VCR_SHA"; exit 1; }
 
           rm -rf /tmp/vcx; mkdir -p /tmp/vcx/a /tmp/vcx/carve
           cabextract -q -d /tmp/vcx/a /tmp/vcr.exe 2>&1 | tail -3
@@ -5764,7 +5768,10 @@ jobs:
         run: |
           # tools/fetch-cached.sh: the plain curl call here; on the owner's Mac (BCD_DOWNLOAD_CACHE) only when Microsoft's copy changed
           bash tools/fetch-cached.sh /tmp/vcr-x86.exe https://aka.ms/vs/17/release/vc_redist.x86.exe \
-            -fsSL --retry 3 --retry-delay 2 --proto '=https' --proto-redir '=https' --max-filesize 134217728 || { rm -f /tmp/vcr-x86.exe; echo "::warning::vc_redist.x86.exe not downloaded: the MFC check uses its synthetic package"; }
+            -fsSL --retry 3 --retry-delay 2 --proto '=https' --proto-redir '=https' --max-filesize 134217728
+          VCR_X86_SHA=$(shasum -a 256 /tmp/vcr-x86.exe | awk '{print $1}')
+          VCR_X86_WANT=0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64
+          [ "$VCR_X86_SHA" = "$VCR_X86_WANT" ] || { echo "::error::Microsoft x86 VC++ runtime SHA-256 mismatch: $VCR_X86_SHA"; exit 1; }
           python3 tests/host/check-mfc32.py --require-swift
 
       # madeira-bcd (upstream port 2026-10-25): PrefixExtractor.c refuses '..' components, absolute paths and a bad tar size field;
@@ -6221,47 +6228,33 @@ jobs:
       - name: Package Madeira and Madeira2 unsigned IPAs
         run: python3 tools/ota-variants.py package build-out/Madeira.xcarchive/Products/Applications/Madeira.app build-out ${{ steps.bn.outputs.n }}
 
-      # Over-the-air install: sign with the owner's certificate (kept in the
-      # owner's PRIVATE bucket, never in the repository) and put both signed IPAs
-      # plus installation pages (7-day pre-signed links) in the same bucket.
-      # A signing/upload failure is caught by the private-bucket gate below.
-      - name: Sign for OTA install (private bucket)
-        id: ota
-        continue-on-error: true
-        env:
-          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
-          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
-          B2_S3_ENDPOINT: ${{ secrets.B2_S3_ENDPOINT }}
-          B2_SIGN_BUCKET: ${{ secrets.B2_SIGN_BUCKET }}
-          SIGN_P12_PASSWORD: ${{ secrets.SIGN_P12_PASSWORD }}
-          OTA_MAIL_USER: ${{ secrets.OTA_MAIL_USER }}
-          OTA_MAIL_APP_PASSWORD: ${{ secrets.OTA_MAIL_APP_PASSWORD }}
-          OTA_MAIL_TO: ${{ secrets.OTA_MAIL_TO }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: bash tools/sign-and-publish-ota.sh build-out/Madeira-0.1.${{ steps.bn.outputs.n }}-unsigned.ipa ${{ steps.bn.outputs.n }} build-out/Madeira2-0.1.${{ steps.bn.outputs.n }}-unsigned.ipa
+      - name: Verify unsigned IPAs and create SBOM/provenance
+        run: python3 tools/independent-build-evidence.py finalize --out build-out/evidence --ipa-dir build-out
 
-      # Owner's decision (2026-10-02): no IPA artifact on GitHub at all. The
-      # repository and its Actions are public, so an artifact is downloadable by
-      # anyone; the only copy of a build is the signed IPA in the owner's
-      # private R2 bucket (the OTA step above). If that step did not succeed,
-      # the build fails here instead of keeping the IPA somewhere public.
-      - name: Check the IPA reached the private bucket
-        if: steps.ota.outcome != 'success'
-        run: |
-          echo "::error::OTA signing/upload did not succeed: this build's IPA was not kept anywhere (no GitHub artifact by design)"
-          exit 1
-
-      # Full logs as an artifact -- the annotations above are truncated, and
-      # digging them out of the raw job log is painful.
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload unsigned IPAs and verification evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: build-logs
-          path: "*.log"
-          if-no-files-found: ignore
+          name: bcd-independent-build-v0.1.712-${{ github.run_id }}
+          path: |
+            build-out/*.ipa
+            build-out/SHA256SUMS
+            build-out/evidence/**
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload source build logs and preflight inventory
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bcd-independent-build-logs-${{ github.run_id }}
+          path: |
+            *.log
+            build-evidence/**
+            build-out/evidence/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Dump first build errors (on failure)
         if: failure()

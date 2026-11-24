@@ -1,0 +1,194 @@
+{
+  "baseline": {
+    "tag": "v0.1.712",
+    "commit": "f811dd05a9183cda20ffd3956cb1958cafe654f7"
+  },
+  "git_sources": [
+    {
+      "name": "bcd-fex",
+      "url": "https://github.com/thebcd69/bcd-fex.git",
+      "commit": "c2c6997d2397f450aa7837411fe08adf8fbabcba",
+      "path": "FEX"
+    },
+    {
+      "name": "bcd-dxmt",
+      "url": "https://github.com/thebcd69/bcd-dxmt.git",
+      "commit": "55cecd983b1dc224a9cbd84ed4c682eb26a37ac7",
+      "path": "dxmt"
+    },
+    {
+      "name": "bcd-dock",
+      "url": "https://github.com/thebcd69/bcd-dock.git",
+      "commit": "f3e7b024e1735333fb2c26504bca155adb0b6196",
+      "path": "madeira-dock"
+    },
+    {
+      "name": "bcd-wine",
+      "url": "https://github.com/thebcd69/bcd-wine.git",
+      "commit": "c605989025d7ac92d5e561b667eb2a735afc451d",
+      "path": "wine"
+    },
+    {
+      "name": "FreeType",
+      "url": "https://github.com/freetype/freetype.git",
+      "commit": "42608f77f20749dd6ddc9e0536788eaad70ea4b5",
+      "path": "research/freetype"
+    },
+    {
+      "name": "LLVM",
+      "url": "https://github.com/llvm/llvm-project.git",
+      "commit": "8dfdcc7b7bf66834a761bd8de445840ef68e4d1a",
+      "path": "toolchains/llvm-project"
+    },
+    {
+      "name": "LuaJIT",
+      "url": "https://github.com/LuaJIT/LuaJIT.git",
+      "commit": "ea9eb7edb5eac4a9d175d74523db34fac0fa5180",
+      "path": "toolchains/LuaJIT"
+    },
+    {
+      "name": "MoltenVK",
+      "url": "https://github.com/KhronosGroup/MoltenVK.git",
+      "commit": "db66022459ffb663aa2b50f6b018bc2e124f5edf",
+      "path": "toolchains/MoltenVK"
+    },
+    {
+      "name": "SPIRV-Cross",
+      "url": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+      "commit": "aa217aeb6c9f0ace7a0ab233b28807edf45eb165",
+      "path": "toolchains/MoltenVK-patched-SPIRV-Cross"
+    },
+    {
+      "name": "DirectXShaderCompiler",
+      "url": "https://github.com/microsoft/DirectXShaderCompiler.git",
+      "commit": "01b62ad47db7dee3dd33f90e7339cf9e860b3f93",
+      "path": "toolchains/DirectXShaderCompiler"
+    },
+    {
+      "name": "BCD historical XtaJIT reference",
+      "url": "https://github.com/thebcd69/bcd-games.git",
+      "commit": "873fe25b010c43252407da79658daed0d06fa725",
+      "path": "app/Madeira/arm64ec-windows/xtajit64.dll (historical source commit)"
+    },
+    {
+      "name": "Metal Shader Converter mirror anchor",
+      "url": "https://github.com/intraducine/iridium.git",
+      "commit": "31ca8f113b842d4c995474438f14c04ef50b7110",
+      "path": "build-out/evidence/msc-origin.json"
+    }
+  ],
+  "archives": [
+    {
+      "name": "llvm-mingw macOS universal UCRT",
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/llvm-mingw-20260421-ucrt-macos-universal.tar.xz",
+      "sha256": "bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7",
+      "enforced_by": [
+        ".github/workflows/build-ipa.yml"
+      ]
+    },
+    {
+      "name": "Microsoft VC++ x64 redistributable",
+      "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+      "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+      "enforced_by": [
+        ".github/workflows/build-ipa.yml"
+      ]
+    },
+    {
+      "name": "Microsoft VC++ x86 redistributable",
+      "url": "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+      "sha256": "0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64",
+      "enforced_by": [
+        ".github/workflows/build-ipa.yml"
+      ]
+    },
+    {
+      "name": "Apple Metal Shader Converter 4.0 beta 2 payload archive",
+      "url": "https://github.com/intraducine/iridium/releases/download/deps-metal-shader-converter-4.0-beta2/metal-shader-converter-4.0-beta2-apple.tar.gz",
+      "sha256": "f61c5bf4eadb993430642bb32c5642b1ddf2479a97b22ac307564967a4ff69d4",
+      "enforced_by": [
+        "tools/fetch-msc-pinned.sh"
+      ]
+    },
+    {
+      "name": "Mesa 25.0.7 source",
+      "url": "https://archive.mesa3d.org/mesa-25.0.7.tar.xz",
+      "sha256": "592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6",
+      "enforced_by": [
+        "build/mesa-ios/build.sh"
+      ]
+    },
+    {
+      "name": "Mesa 26.2.4 source",
+      "url": "https://archive.mesa3d.org/mesa-26.2.4.tar.xz",
+      "sha256": "bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9",
+      "enforced_by": [
+        "build/mesa-ios/build-kosmickrisp-bcd.sh"
+      ]
+    },
+    {
+      "name": "Mesa Playport source snapshot",
+      "url": "https://gitlab.freedesktop.org/mesa/mesa/-/archive/b39d173ca9369c19fda2635be6655d308067e52d/mesa-b39d173ca9369c19fda2635be6655d308067e52d.tar.gz",
+      "sha256": "1d50da0fbedaec06f182932d01e9c1cde1f391105bfe27b77ff09944fcea3dd6",
+      "enforced_by": [
+        "build/mesa-ios/fetch-playport.py"
+      ]
+    },
+    {
+      "name": "ICU 78.3 source",
+      "url": "https://deb.debian.org/debian/pool/main/i/icu/icu_78.3.orig.tar.gz",
+      "sha256": "3a2e7a47604ba702f345878308e6fefeca612ee895cf4a5f222e7955fabfe0c0",
+      "enforced_by": [
+        "tools/build-icu-optin.sh"
+      ]
+    },
+    {
+      "name": "Noto Sans JP Regular font",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+      "sha256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073",
+      "enforced_by": [
+        "tools/fetch-japanese-font.sh"
+      ]
+    },
+    {
+      "name": "TimGM6mb General MIDI SoundFont",
+      "url": "https://raw.githubusercontent.com/musescore/musescore-old/90c33ef9d87b3f5ff92efd3b07d89eb455fb1fef/mscore/share/sound/TimGM6mb.sf2",
+      "sha256": "c5378b62028c920cb11e4803327983fee2f2cdff5dc89c708e39da417e51c854",
+      "enforced_by": [
+        "tools/fetch-soundfont.sh"
+      ]
+    }
+  ],
+  "python_wheels": [
+    {
+      "name": "meson",
+      "version": "1.12.1",
+      "sha256": "930bc7542cbd9f57009e182fd014eba48cf1a0180a7b9006d2d32d8f168d8b02"
+    },
+    {
+      "name": "mako",
+      "version": "1.4.3",
+      "sha256": "723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f"
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.4",
+      "sha256": "52704c5d36eb6dda8866493decd61111fff86244c9b1ad225ca01b9e91e5970f"
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.4",
+      "sha256": "7335809813ec838d9cd334b1744cda33deb141c9ef23a9c0df371c37980d3851"
+    },
+    {
+      "name": "packaging",
+      "version": "26.4",
+      "sha256": "81383611a09c1bc0b08b76e0fd5829d7c6824c65b27a6aee339da133f4233ea2"
+    },
+    {
+      "name": "ninja",
+      "version": "1.13.2",
+      "sha256": "fd82e26c0706ad4ab88e5fdd26f3fab0a987a90f810160f6c322e752c6af298b"
+    }
+  ]
+}
