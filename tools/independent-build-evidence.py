@@ -148,6 +148,7 @@ def verify_pinned_input_references(lock: dict[str, object]) -> None:
         "d3d8to9": [ROOT / "third-party/d3d8to9/BCD-SOURCE.txt"],
         "cnc-ddraw": [ROOT / "third-party/cnc-ddraw/BCD-SOURCE.txt"],
         "DXMT overlay test base": [ROOT / "tests/host/dxmt_base.py"],
+        "FEX overlay test base": [ROOT / "tests/host/fexpatch_eval.py"],
         "BCD historical XtaJIT reference": [ROOT / "tools/build-xtajit64.sh"],
         "Metal Shader Converter mirror anchor": [ROOT / "tools/fetch-msc-pinned.sh"],
     }

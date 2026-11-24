@@ -23,6 +23,12 @@
       "path": "tests/host/dxmt_base.py"
     },
     {
+      "name": "FEX overlay test base",
+      "url": "https://github.com/FEX-Emu/FEX.git",
+      "commit": "3bec2ac498bf78156ab47c0c194b0e8cb2849756",
+      "path": "tests/host/fexpatch_eval.py"
+    },
+    {
       "name": "bcd-dock",
       "url": "https://github.com/thebcd69/bcd-dock.git",
       "commit": "f3e7b024e1735333fb2c26504bca155adb0b6196",
