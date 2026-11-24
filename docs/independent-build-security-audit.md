@@ -51,7 +51,10 @@ available.
 The separate `tools/log-facts.py` trace-summary helper is absent as well. CI
 still runs the app's trace capture, consent, log association, and client upload
 checks; only the missing operator parser's rendering of trace facts is
-`UNVERIFIED`.
+`UNVERIFIED`. The operator-side `tools/cluster-logs.py` triage program is also
+absent, so its exception grouping and sorting behavior cannot be checked from
+this tag; CI reports that utility as `UNVERIFIED`. The app's session recorder,
+session calculations, log scrubbing, and trace upload checks remain active.
 
 Screenshots are created by the app. The Photos integration requests add-only
 access; the source does not request photo-library read access. Files and external

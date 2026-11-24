@@ -215,6 +215,11 @@
       "path": "tools/log-facts.py",
       "status": "absent from v0.1.712",
       "checks": "operator-side performance trace summary parser tests are UNVERIFIED"
+    },
+    {
+      "path": "tools/cluster-logs.py",
+      "status": "absent from v0.1.712",
+      "checks": "operator-side log triage, exception grouping and sorting tests are UNVERIFIED"
     }
   ]
 }

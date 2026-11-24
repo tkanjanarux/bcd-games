@@ -225,6 +225,17 @@ def preflight(out: Path) -> None:
         perftrace_test = ROOT / "tests/host/check-bcd-perftrace.py"
         if "trace-summary helper is absent" not in audit or not perftrace_test.is_file() or "UNVERIFIED: tools/log-facts.py is absent" not in perftrace_test.read_text():
             fail("the absent trace-summary helper must remain explicitly unverified")
+        session_test = ROOT / "tests/host/check-bcd-session-record.py"
+        cluster_test = ROOT / "tests/host/check-cluster-logs.py"
+        if not session_test.is_file() or "UNVERIFIED: tools/log-facts.py is absent" not in session_test.read_text():
+            fail("session recording checks must retain app behavior and disclose the absent operator parser")
+        if not cluster_test.is_file() or "UNVERIFIED: tools/log-facts.py is absent" not in cluster_test.read_text():
+            fail("log triage checks must disclose the absent operator parser")
+    cluster_tool = ROOT / "tools/cluster-logs.py"
+    if not cluster_tool.exists():
+        cluster_test = ROOT / "tests/host/check-cluster-logs.py"
+        if "operator-side `tools/cluster-logs.py` triage program" not in audit or not cluster_test.is_file() or "UNVERIFIED: tools/cluster-logs.py is absent" not in cluster_test.read_text():
+            fail("the absent log-triage operator utility must remain explicitly unverified")
     verify_pinned_input_references(lock)
 
     submodule_status = subprocess.check_output(
