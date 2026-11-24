@@ -17,6 +17,12 @@
       "path": "dxmt"
     },
     {
+      "name": "DXMT overlay test base",
+      "url": "https://github.com/willfaust/dxmt.git",
+      "commit": "db546ee466ad50ec6463edb5fa183de11db43761",
+      "path": "tests/host/dxmt_base.py"
+    },
+    {
       "name": "bcd-dock",
       "url": "https://github.com/thebcd69/bcd-dock.git",
       "commit": "f3e7b024e1735333fb2c26504bca155adb0b6196",
