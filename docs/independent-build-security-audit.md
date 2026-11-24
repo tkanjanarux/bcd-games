@@ -48,6 +48,10 @@ host tests is also absent from this tag. CI does not need or execute that helper
 its download, local-file handling, and key-redaction behavior are therefore
 reported as `UNVERIFIED` rather than inferred from tests of code that is not
 available.
+The separate `tools/log-facts.py` trace-summary helper is absent as well. CI
+still runs the app's trace capture, consent, log association, and client upload
+checks; only the missing operator parser's rendering of trace facts is
+`UNVERIFIED`.
 
 Screenshots are created by the app. The Photos integration requests add-only
 access; the source does not request photo-library read access. Files and external

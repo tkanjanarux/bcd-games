@@ -220,6 +220,11 @@ def preflight(out: Path) -> None:
         tests = [ROOT / f"tests/host/{name}" for name in ("check-log-upload.py", "check-feedback.py", "check-bcd-help.py", "check-bcd-screenshot.py")]
         if not all(path.is_file() and "UNVERIFIED" in path.read_text() for path in tests):
             fail("host checks must print UNVERIFIED for the absent log-pull operator utility")
+    log_facts = ROOT / "tools/log-facts.py"
+    if not log_facts.exists():
+        perftrace_test = ROOT / "tests/host/check-bcd-perftrace.py"
+        if "trace-summary helper is absent" not in audit or not perftrace_test.is_file() or "UNVERIFIED: tools/log-facts.py is absent" not in perftrace_test.read_text():
+            fail("the absent trace-summary helper must remain explicitly unverified")
     verify_pinned_input_references(lock)
 
     submodule_status = subprocess.check_output(

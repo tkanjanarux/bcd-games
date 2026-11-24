@@ -199,5 +199,22 @@
       "audit_status": "server-side implementation, deployment, authorization, storage, retention and logging are unverified",
       "ci_behavior": "no diagnostic upload is made by CI; client-side security checks remain required"
     }
+  ],
+  "unavailable_source_helpers": [
+    {
+      "path": "bcd-logs/worker/worker.js",
+      "status": "absent from v0.1.712 and submodules",
+      "checks": "server-side upload validation, retention, authorization and worker tests are UNVERIFIED"
+    },
+    {
+      "path": "tools/pull-logs.py",
+      "status": "absent from v0.1.712",
+      "checks": "operator download, local-file handling and key-redaction tests are UNVERIFIED"
+    },
+    {
+      "path": "tools/log-facts.py",
+      "status": "absent from v0.1.712",
+      "checks": "operator-side performance trace summary parser tests are UNVERIFIED"
+    }
   ]
 }
