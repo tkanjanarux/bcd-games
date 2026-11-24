@@ -164,6 +164,8 @@ static DWORD GetCurrentThreadId(void) { return 0x42; }
 static void EnterCriticalSection(CRITICAL_SECTION *cs) { pthread_mutex_lock(&cs->m); }
 static void LeaveCriticalSection(CRITICAL_SECTION *cs) { pthread_mutex_unlock(&cs->m); }
 static int timeouts;
+static pthread_mutex_t timeout_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t timeout_cv = PTHREAD_COND_INITIALIZER;
 /* The 2000 ms slices run 40 times faster here. */
 static BOOL SleepConditionVariableCS(CONDITION_VARIABLE *cv, CRITICAL_SECTION *cs, DWORD ms) {
     struct timespec ts;
@@ -172,7 +174,14 @@ static BOOL SleepConditionVariableCS(CONDITION_VARIABLE *cv, CRITICAL_SECTION *c
     clock_gettime(CLOCK_REALTIME, &ts);
     ts.tv_nsec += scaled * 1000000L;
     ts.tv_sec += ts.tv_nsec / 1000000000L; ts.tv_nsec %= 1000000000L;
-    if (pthread_cond_timedwait(&cv->c, &cs->m, &ts) == ETIMEDOUT) { timeouts++; last_error = ERROR_TIMEOUT; return 0; }
+    if (pthread_cond_timedwait(&cv->c, &cs->m, &ts) == ETIMEDOUT) {
+        pthread_mutex_lock(&timeout_lock);
+        timeouts++;
+        pthread_cond_broadcast(&timeout_cv);
+        pthread_mutex_unlock(&timeout_lock);
+        last_error = ERROR_TIMEOUT;
+        return 0;
+    }
     return 1;
 }
 static void WakeAllConditionVariable(CONDITION_VARIABLE *cv) { pthread_cond_broadcast(&cv->c); }
@@ -208,7 +217,25 @@ static struct mad_queue q = { (void *)1, { PTHREAD_MUTEX_INITIALIZER }, { PTHREA
                               { PTHREAD_COND_INITIALIZER }, { PTHREAD_COND_INITIALIZER } };
 static volatile int worker_done;
 static void *finish_job(void *arg) {
-    usleep((useconds_t)(uintptr_t)arg * 1000);
+    uintptr_t delay_ms = (uintptr_t)arg;
+    if (delay_ms) {
+        usleep((useconds_t)delay_ms * 1000);
+    } else {
+        /* Start the simulated 3.5-slice stall only after the drain has
+         * observed two full timeout slices. This avoids a scheduler race in
+         * which the worker's timer expires before the drain thread is first
+         * scheduled on a busy hosted runner. The bounded wait still fails the
+         * harness if the drain stops producing timeout slices. */
+        struct timespec deadline;
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += 2;
+        pthread_mutex_lock(&timeout_lock);
+        while (timeouts < 2) {
+            if (pthread_cond_timedwait(&timeout_cv, &timeout_lock, &deadline) == ETIMEDOUT) break;
+        }
+        pthread_mutex_unlock(&timeout_lock);
+        usleep(75000);
+    }
     pthread_mutex_lock(&q.sub_lock.m);
     worker_done = 1; q.sub_busy = 0;
     pthread_cond_broadcast(&q.sub_idle.c);
@@ -237,7 +264,7 @@ int main(void) {
     assert(last_error == 0x1234 && loglen == 0 && timeouts == 0);
     /* a Present the worker is stuck in for ~3.5 slices: the drain ends when it does */
     q.sub_busy = 1; q.diag_job = MAD_SUB_PRESENT; mad_swd_step(&q, 'D'); worker_done = 0;
-    pthread_create(&t, NULL, finish_job, (void *)(uintptr_t)175);
+    pthread_create(&t, NULL, finish_job, (void *)(uintptr_t)0);
     last_error = 0x1234; mad_queue_drain(&q);
     assert(worker_done && !q.sub_busy && last_error == 0x1234);
     pthread_join(t, NULL);
