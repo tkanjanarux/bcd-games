@@ -125,6 +125,8 @@ check("build script failures are warnings that leave the bundle alone",
 wf = (root / ".github/workflows/build-ipa.yml").read_text()
 steps = re.findall(r"\n      - name: (.+)", wf)
 idx = {n: i for i, n in enumerate(steps)}
+build_tools = next((i for i, n in enumerate(steps) if n.startswith("Install") and "llvm-mingw" in n
+                    and ("build tools" in n.lower() or "ninja" in n.lower() or "meson" in n.lower())), None)
 b = next((i for i, n in enumerate(steps) if n.startswith("Build dxgi-src.dll")), None)
 package = next((i for i, n in enumerate(steps) if n.startswith("Package ") and "unsigned IPA" in n), None)
 check("workflow has the dxgi-src.dll step", b is not None)
@@ -133,7 +135,7 @@ if b is not None:
     first_dxmt_patch = min(i for i, n in enumerate(steps) if n.startswith("Patch DXMT") or n.startswith("Patch winemetal")
                            or n.startswith("Patch airconv"))
     check("it runs after llvm-mingw and before every DXMT patch step",
-          idx["Install ninja/meson and fetch llvm-mingw"] < b < first_dxmt_patch)
+          build_tools is not None and build_tools < b < first_dxmt_patch)
     check("it runs before nvapi64 derives its import lib and before the IPA is packaged",
           package is not None and b < idx["Build DXMT nvapi64.dll"] and b < idx["Verify committed PE DLLs"] < package)
     block = wf[wf.index("- name: " + steps[b]):]

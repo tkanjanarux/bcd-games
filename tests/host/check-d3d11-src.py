@@ -74,15 +74,18 @@ wf = (root / ".github/workflows/build-ipa.yml").read_text()
 steps = re.findall(r"\n      - name: (.+)", wf)
 idx = {n: i for i, n in enumerate(steps)}
 b = next((i for i, n in enumerate(steps) if n.startswith("Build d3d11-src.dll")), None)
+build_tools = next((i for i, n in enumerate(steps) if n.startswith("Install") and "llvm-mingw" in n
+                    and ("build tools" in n.lower() or "ninja" in n.lower() or "meson" in n.lower())), None)
 # "Package unsigned IPA" until the paired apps (ca82558), "Package Madeira and Madeira2 unsigned IPAs" since
 package = next((i for i, n in enumerate(steps) if n.startswith("Package") and "unsigned IPA" in n), None)
 check("workflow has the d3d11-src.dll step", b is not None)
+check("workflow installs the hash-locked build tools and llvm-mingw", build_tools is not None)
 check("workflow has the step that packages the unsigned IPA", package is not None)
-if b is not None and package is not None:
+if b is not None and package is not None and build_tools is not None:
     first_dxmt_patch = min(i for i, n in enumerate(steps) if n.startswith("Patch DXMT") or n.startswith("Patch winemetal")
                            or n.startswith("Patch airconv"))
     check("it runs after llvm-mingw and before every DXMT patch step",
-          idx["Install ninja/meson and fetch llvm-mingw"] < b < first_dxmt_patch)
+          build_tools < b < first_dxmt_patch)
     check("it runs before the IPA is packaged", b < idx["Verify committed PE DLLs"] < package)
     block = wf[wf.index("- name: " + steps[b]):]
     block = block[:block.index("\n      - name:", 10)]

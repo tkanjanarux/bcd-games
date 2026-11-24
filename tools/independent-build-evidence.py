@@ -145,6 +145,8 @@ def verify_pinned_input_references(lock: dict[str, object]) -> None:
         "MoltenVK": [ROOT / "build/moltenvk-ios/build.sh", ROOT / "build/moltenvk-ios/build-patched.sh"],
         "SPIRV-Cross": [ROOT / "build/moltenvk-ios/build-patched.sh"],
         "DirectXShaderCompiler": [ROOT / "tools/build-dxcompiler.sh"],
+        "d3d8to9": [ROOT / "third-party/d3d8to9/BCD-SOURCE.txt"],
+        "cnc-ddraw": [ROOT / "third-party/cnc-ddraw/BCD-SOURCE.txt"],
         "BCD historical XtaJIT reference": [ROOT / "tools/build-xtajit64.sh"],
         "Metal Shader Converter mirror anchor": [ROOT / "tools/fetch-msc-pinned.sh"],
     }

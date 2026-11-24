@@ -244,6 +244,8 @@ check("the new files carry the SPDX and BCD Material headers", all(t.startswith(
 wf = (root / ".github/workflows/build-ipa.yml").read_text()
 steps = re.findall(r"\n      - name: (.+)", wf)
 idx = {n_: i for i, n_ in enumerate(steps)}
+build_tools = next((i for i, n_ in enumerate(steps) if n_.startswith("Install") and "llvm-mingw" in n_
+                    and ("build tools" in n_.lower() or "ninja" in n_.lower() or "meson" in n_.lower())), None)
 b8 = next((n_ for n_ in steps if n_.startswith("Build d3d8to9.dll")), None)
 bc = next((n_ for n_ in steps if n_.startswith("Build cnc-ddraw.dll")), None)
 k8 = next((n_ for n_ in steps if n_.startswith("Check the Direct3D 8 and DirectDraw routes")), None)
@@ -259,7 +261,7 @@ if None not in (b8, bc, k8, kd):
               and "continue-on-error: true" in block and f"bash {script}" in block and 'cmp -s "$T/before" "$T/after"' in block and "exit 1" in block
               and "app/Madeira/i386-windows/{d3d8,d3d9,d3d9shim,d3d9-emulated,d3d11,dxgi,d3d10core,winemetal,ddraw,wined3d,d3dx9_43}.dll" in block)
     check("the checks run with the toolchain installed (the route check) and on a runner with swiftc (the scan check)",
-          idx["Install ninja/meson and fetch llvm-mingw"] < idx[k8] and "check-d3d8-to-d3d9.py" in wf and "check-d3d9-x64-default.py" in wf)
+          build_tools is not None and build_tools < idx[k8] and "check-d3d8-to-d3d9.py" in wf and "check-d3d9-x64-default.py" in wf)
 key = re.search(r'echo "key=(i386-farm-[^"]*)" >> "\$GITHUB_OUTPUT"', wf)
 check("the i386 farm's cache key is unchanged (the new scripts are outside it)", key is not None
       and key.group(1) == "i386-farm-$(git -C wine rev-parse HEAD)-$(git -C dxmt rev-parse HEAD)-${{ hashFiles('build/wine-i386/build.sh', 'tools/patch-dxmt-*.py', 'tools/patch-wine-*.py') }}")

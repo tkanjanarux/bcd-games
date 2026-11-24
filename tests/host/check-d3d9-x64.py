@@ -90,6 +90,8 @@ else:
 wf = (root / ".github/workflows/build-ipa.yml").read_text()
 steps = re.findall(r"\n      - name: (.+)", wf)
 idx = {n: i for i, n in enumerate(steps)}
+build_tools = next((i for i, n in enumerate(steps) if n.startswith("Install") and "llvm-mingw" in n
+                    and ("build tools" in n.lower() or "ninja" in n.lower() or "meson" in n.lower())), None)
 build_name = next((n for n in steps if n.startswith("Build d3d9-dxmt.dll")), None)
 check_name = next((n for n in steps if n.startswith("Check the opt-in 64-bit Direct3D 9")), None)
 check("the workflow has the build step and the check step", build_name is not None and check_name is not None)
@@ -106,7 +108,7 @@ if build_name and check_name:
           and "app/Madeira/arm64ec-windows/{d3d9,d3d11,dxgi,d3d10core,winemetal}.dll" in block
           and "app/Madeira/i386-windows/{d3d9,d3d9shim,d3d9-emulated,d3d11,dxgi,d3d10core,winemetal}.dll" in block and "exit 1" in block)
     check("the check step runs with the toolchain, after llvm-mingw is installed",
-          idx["Install ninja/meson and fetch llvm-mingw"] < idx[check_name] and "check-d3d9-x64.py" in wf)
+          build_tools is not None and build_tools < idx[check_name] and "check-d3d9-x64.py" in wf)
 key = re.search(r'echo "key=(i386-farm-[^"]*)" >> "\$GITHUB_OUTPUT"', wf)
 check("the i386 farm's cache key is unchanged: wine revision, dxmt revision, and the hash of build.sh, patch-dxmt-*.py and patch-wine-*.py",
       key is not None and key.group(1) == "i386-farm-$(git -C wine rev-parse HEAD)-$(git -C dxmt rev-parse HEAD)-${{ hashFiles('build/wine-i386/build.sh', 'tools/patch-dxmt-*.py', 'tools/patch-wine-*.py') }}")

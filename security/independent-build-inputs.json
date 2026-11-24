@@ -65,6 +65,18 @@
       "path": "toolchains/DirectXShaderCompiler"
     },
     {
+      "name": "d3d8to9",
+      "url": "https://github.com/crosire/d3d8to9.git",
+      "commit": "255338f698c8270b537f0a91a13f795f4f988250",
+      "path": "third-party/d3d8to9"
+    },
+    {
+      "name": "cnc-ddraw",
+      "url": "https://github.com/FunkyFr3sh/cnc-ddraw.git",
+      "commit": "541b5de218ec3fbd6ea91e606ebfadc07c1786b0",
+      "path": "third-party/cnc-ddraw"
+    },
+    {
       "name": "BCD historical XtaJIT reference",
       "url": "https://github.com/thebcd69/bcd-games.git",
       "commit": "873fe25b010c43252407da79658daed0d06fa725",
