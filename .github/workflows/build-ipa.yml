@@ -13,7 +13,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  guest-instruction:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check guest instruction
+        run: python3 tests/host/check-guest-instruction.py
   build:
+    needs: guest-instruction
     runs-on: xcode-27
     permissions:
       contents: read
@@ -956,8 +967,6 @@ jobs:
         run: python3 tests/host/check-wine-media-dlls.py
 
       # x64 classification, IAT slots and fault-safe guest-instruction diagnostics (ASan/UBSan, three negative controls).
-      - name: Check guest instruction
-        run: python3 tests/host/check-guest-instruction.py
 
       # D3D9 device lock and FEX split CAS: no split-lock rollback, strict split locks on for WOW64, 4x20000 XADD exact.
       - name: Check d3d9 splitlock
