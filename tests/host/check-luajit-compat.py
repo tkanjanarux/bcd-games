@@ -187,9 +187,12 @@ check("interpreter only, GC64 (the default), internal unwinding; the DLL is stri
       'XCFLAGS="-DLUAJIT_DISABLE_JIT -DLUAJIT_NO_UNWIND"' in ljb and "DISABLE_GC64" not in ljb and 'x86_64-w64-mingw32-strip -o "$destination/lua51.dll"' in ljb
       and 'OUT="$R/app/Madeira/compat/love"' in ljb)
 check("a DLL that still holds the low-memory allocator is refused", "grep -aq NtAllocateVirtualMemory" in ljb and 'rm -f "$destination/lua51.dll"' in ljb)
+i_mingw = wf.index("- name: Install hash-locked Mesa build tools and fetch llvm-mingw")
 i_restore = wf.index("- name: Restore GC64 LuaJIT (LOVE games)")
-check("CI: after llvm-mingw is saved, restored from a cache keyed on the script, built only on a miss, never failing the build, then saved",
-      wf.index("- name: Save llvm-mingw") < i_restore < wf.index("- name: Build the GC64 LuaJIT (LOVE games)") < wf.index("- name: Save GC64 LuaJIT (LOVE games)")
+check("CI: after the SHA-256-locked llvm-mingw install, restored from a cache keyed on the script, built only on a miss, never failing the build, then saved",
+      i_mingw < i_restore < wf.index("- name: Build the GC64 LuaJIT (LOVE games)") < wf.index("- name: Save GC64 LuaJIT (LOVE games)")
+      and "WANT=bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7" in wf
+      and '[ "$GOT" = "$WANT" ]' in wf
       and "key: luajit-gc64-v1-${{ hashFiles('build/luajit-x64/build.sh', 'build/luajit-x64/*.patch') }}" in wf
       and "continue-on-error: true\n        run: bash build/luajit-x64/build.sh" in wf)
 check("CI runs this check", "python3 tests/host/check-luajit-compat.py" in wf)
