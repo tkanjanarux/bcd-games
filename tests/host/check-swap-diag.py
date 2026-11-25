@@ -243,7 +243,16 @@ static void *finish_job(void *arg) {
     return NULL;
 }
 static void *finish_present(void *arg) {
-    usleep((useconds_t)(uintptr_t)arg * 1000);
+    (void)arg;
+    /* Release only after the throttle observes a timeout, regardless of
+     * which thread the host scheduler starts first. */
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) abort();
+    deadline.tv_sec += 10;
+    if (pthread_mutex_lock(&timeout_lock) != 0) abort();
+    while (timeouts < 1)
+        if (pthread_cond_timedwait(&timeout_cv, &timeout_lock, &deadline) != 0) abort();
+    if (pthread_mutex_unlock(&timeout_lock) != 0) abort();
     pthread_mutex_lock(&q.sub_lock.m);
     worker_done = 1; q.sub_presents--;
     pthread_cond_broadcast(&q.sub_presented.c);
@@ -282,7 +291,7 @@ int main(void) {
      * config once, whose line may change LastError, as before) */
     g_present_ahead = 1;
     q.sub_presents = 2; q.diag_job = MAD_SUB_WAIT; worker_done = 0;
-    pthread_create(&t, NULL, finish_present, (void *)(uintptr_t)120);
+    if (pthread_create(&t, NULL, finish_present, NULL) != 0) abort();
     last_error = 0x77; mad_present_throttle(&q);
     pthread_join(t, NULL);
     assert(worker_done && q.sub_presents == 1 && last_error == 0x77);
