@@ -184,8 +184,18 @@ with tempfile.TemporaryDirectory(prefix="madeira-ota-contracts-") as directory:
 subprocess.run(["bash", "-n", str(ROOT / "tools/sign-and-publish-ota.sh")], check=True)
 workflow = (ROOT / ".github/workflows/build-ipa.yml").read_text()
 assert workflow.count("xcodebuild -project app/Madeira.xcodeproj") == 1
-assert workflow.count("run: bash tools/sign-and-publish-ota.sh") == 1
-assert "build-out/Madeira2-0.1.${{ steps.bn.outputs.n }}-unsigned.ipa" in workflow
+# CI only publishes verified unsigned artifacts. OTA is tested offline below.
+assert "sign-and-publish-ota.sh" not in workflow
+assert "${{ secrets." not in workflow
+package = "run: python3 tools/ota-variants.py package build-out/Madeira.xcarchive/Products/Applications/Madeira.app build-out ${{ steps.bn.outputs.n }}"
+verify = "run: python3 tools/independent-build-evidence.py finalize --out build-out/evidence --ipa-dir build-out"
+upload = "      - name: Upload unsigned IPAs and verification evidence"
+logs = "      - name: Upload source build logs and preflight inventory"
+assert all(workflow.count(step) == 1 for step in (package, verify, upload, logs))
+assert workflow.index("xcodebuild -project app/Madeira.xcodeproj") < workflow.index(package) < workflow.index(verify) < workflow.index(upload) < workflow.index(logs)
+upload_step = workflow[workflow.index(upload):workflow.index(logs)]
+assert all(field in upload_step for field in ("if: success()", "build-out/*.ipa", "build-out/SHA256SUMS",
+                                            "build-out/evidence/**", "if-no-files-found: error"))
 # madeira-bcd FORK-ONLY: the version is the fork's one build-number sequence
 # (docs/local-build/BUILD-NUMBER), read once before anything is built; GitHub's
 # run_number appears only in that step's notice.
@@ -208,7 +218,7 @@ assert signer.index('for name in "${NAMES[@]}"; do\n  for try in 1 2 3 4 5; do\n
 assert '[ -n "${OTA_IPA_UPLOADER:-}" ] && [ "${GITHUB_ACTIONS:-}" != true ]' in signer
 # an IPA that fails all its tries stops the script before the mail (no two-button mail for a missing app)
 assert 'did not upload after 5 tries"; exit 1; }' in signer
-print("PASS: one archive, one paired signing invocation and one email invocation; shell syntax valid")
+print("PASS: one archive, verified unsigned pair upload only in CI, and one email invocation in the offline-tested OTA publisher; shell syntax valid")
 
 # Run the actual shell orchestration with local tool doubles. The macOS-only
 # signing commands are substituted; storage, links and SMTP never use a network.
