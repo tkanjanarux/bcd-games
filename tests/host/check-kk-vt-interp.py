@@ -313,9 +313,19 @@ int main(void) {
 # 5. wiring
 kk = (R / "tests/host/check-kosmickrisp.py").read_text()
 check("the series check knows 0036", "0036-wsi-metal-apple-frame-interpolation-MADEIRA_VT_INTERP.patch" in kk and "range(1, 37)" in kk)
-readme = (series / "README.md").read_text()
-check("the series' README says what 0036 is, stand-ins included", "0036-wsi-metal-apple-frame-interpolation-MADEIRA_VT_INTERP.patch" in readme
-      and "stand-in" in readme)
+readme_path = series / "README.md"
+if readme_path.is_file():
+    readme = readme_path.read_text()
+    check("the series' README says what 0036 is, stand-ins included",
+          "0036-wsi-metal-apple-frame-interpolation-MADEIRA_VT_INTERP.patch" in readme
+          and "stand-in" in readme)
+else:
+    # v0.1.712 tracks no README beside the series. Its numbered patch is the
+    # canonical, hashable description and is already required to be last above.
+    check("the tracked 0036 patch message describes Apple frame interpolation and its stand-ins",
+          "Subject: [PATCH] wsi/metal: Apple frame interpolation" in head
+          and "stand-in" in head)
+    print("AUDIT build/mesa-ios/playport-patches/README.md is absent from the public v0.1.712 baseline; description verified in the tracked 0036 patch message")
 plain = (R / "app/Madeira/BCDVTInterp.swift").read_text()
 live = (R / "app/Madeira/BCDVTInterpLive.swift").read_text()
 check("the app: a KosmicKrisp game starts it without the live present path",
