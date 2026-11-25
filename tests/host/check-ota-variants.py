@@ -93,7 +93,8 @@ with tempfile.TemporaryDirectory(prefix="madeira-ota-contracts-") as directory:
     sideload = plist(ROOT / "app/Madeira/Sideload.entitlements")
     full = plist(ROOT / "app/Madeira/Madeira.entitlements")
     assert set(sideload) == {"com.apple.developer.kernel.increased-memory-limit",
-                             "com.apple.developer.kernel.extended-virtual-addressing", "get-task-allow"}
+                             "com.apple.developer.kernel.extended-virtual-addressing",
+                             "com.apple.security.cs.allow-jit", "get-task-allow"}
     assert set(sideload) <= set(full) and all(full[k] == v for k, v in sideload.items())
     fake = tmp / "fakesign" / "Madeira.app"
     for bundle, exe in ((fake, "Madeira"), (fake / "Frameworks/StikJIT.framework", "StikJIT"),
@@ -110,8 +111,8 @@ with tempfile.TemporaryDirectory(prefix="madeira-ota-contracts-") as directory:
     for code in (fake, fake / "Frameworks/StikJIT.framework", fake / "PlugIns/MadeiraMemoryHost.appex"):
         info = subprocess.run(["codesign", "-dvvv", str(code)], capture_output=True, text=True).stderr
         assert "Signature=adhoc" in info and "Authority=" not in info and "TeamIdentifier=not set" in info, info
-    print("PASS: the unsigned IPA is ad-hoc signed inside out, carries increased-memory-limit, extended-virtual-addressing "
-          "and get-task-allow for sideloaders, and holds no certificate or team")
+    print("PASS: the unsigned IPA is ad-hoc signed inside out, carries increased-memory-limit, extended-virtual-addressing, "
+          "allow-jit and get-task-allow for sideloaders, and holds no certificate or team")
 
     data = ota.publication("0.1.413", 413, True)
     for row in data["variants"]:
