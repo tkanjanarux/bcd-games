@@ -395,6 +395,7 @@ else:
 if platform.system() == 'Darwin' and cc:
     cap_test = r'''
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/resource.h>
@@ -403,17 +404,31 @@ if platform.system() == 'Darwin' and cc:
 #include <mach/mach.h>
 extern void madeira_bg_cpu_cap(int percent);
 extern void madeira_bg_cpu_stats(double *cpu_s, double *wall_s, double *held_s);
-static volatile int quit;
-static void *busy(void *a) { volatile unsigned long x = 0; (void)a; while (!quit) x++; return NULL; }
+static atomic_int quit;
+static void *busy(void *a) { volatile unsigned long x = 0; (void)a; while (!atomic_load_explicit(&quit, memory_order_relaxed)) x++; return NULL; }
 static double now(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 static double cpu(void) { struct rusage r; getrusage(RUSAGE_SELF, &r);
     return r.ru_utime.tv_sec + r.ru_utime.tv_usec / 1e6 + r.ru_stime.tv_sec + r.ru_stime.tv_usec / 1e6; }
+static int worker_time(pthread_t worker, double *seconds, int *suspend_count)
+{
+    thread_basic_info_data_t info;
+    mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+    if (thread_info(pthread_mach_thread_np(worker), THREAD_BASIC_INFO, (thread_info_t)&info, &count)
+            != KERN_SUCCESS || count < THREAD_BASIC_INFO_COUNT) return 0;
+    *suspend_count = info.suspend_count;
+    *seconds = info.user_time.seconds + info.user_time.microseconds / 1e6
+             + info.system_time.seconds + info.system_time.microseconds / 1e6;
+    return 1;
+}
 int main(void)
 {
     pthread_t th[4];
+    double resume_cpu[4];
+    unsigned progressed = 0;
     int i, fails = 0;
     double t0, c0, base, capped, after, gap = 0, last, w, u, h;
-    for (i = 0; i < 4; i++) pthread_create(&th[i], NULL, busy, NULL);
+    for (i = 0; i < 4; i++)
+        if (pthread_create(&th[i], NULL, busy, NULL) != 0) { puts("FAIL starting a worker"); return 1; }
     usleep(200000);
     t0 = now(); c0 = cpu(); usleep(1000000); base = (cpu() - c0) / (now() - t0);
     madeira_bg_cpu_cap(50);
@@ -426,17 +441,40 @@ int main(void)
     }
     capped = (cpu() - c0) / (now() - t0);
     madeira_bg_cpu_stats(&u, &w, &h);
-    madeira_bg_cpu_cap(0);                  /* returns once every held thread runs again */
+    madeira_bg_cpu_cap(0);                  /* returns once every held thread is resumed */
+    /* A shared runner may have different free CPU capacity from the baseline.
+       Check the kernel suspend counts immediately, then confirm every worker
+       has taken CPU time, without requiring the former aggregate CPU rate. */
+    for (i = 0; i < 4; i++) {
+        int suspended;
+        if (!worker_time(th[i], &resume_cpu[i], &suspended) || suspended != 0) {
+            printf("FAIL worker %d is not confirmed resumed after the cap was turned off\n", i);
+            return 1;
+        }
+    }
     t0 = now(); c0 = cpu(); usleep(1000000); after = (cpu() - c0) / (now() - t0);
-    quit = 1;
+    do {
+        for (i = 0; i < 4; i++) {
+            double elapsed;
+            int suspended;
+            if (!worker_time(th[i], &elapsed, &suspended) || suspended != 0) {
+                printf("FAIL worker %d is not confirmed running after the cap was turned off\n", i);
+                return 1;
+            }
+            if (elapsed > resume_cpu[i]) progressed |= 1u << i;
+        }
+        if (progressed == 0xFu) break;
+        usleep(50000);
+    } while (now() - t0 < 10.0);
+    atomic_store_explicit(&quit, 1, memory_order_relaxed);
     for (i = 0; i < 4; i++) pthread_join(th[i], NULL);
     printf("cpu per second: uncapped %.2f, capped %.2f, after %.2f; main thread's longest gap %.0f ms; stats wall %.1f s held %.1f s\n",
            base, capped, after, gap * 1000, w, h);
+    if (progressed != 0xFu) { printf("FAIL not all workers took CPU time after cap off (mask %#x)\n", progressed); return 1; }
     if (base < 1.5) { puts("skip: fewer than two free cores, the cap cannot be shown"); return 0; }
     if (!(capped < 0.85)) { puts("FAIL capped CPU is not near 50% of one core"); fails++; }
     if (!(capped > 0.15)) { puts("FAIL the process was frozen, not capped"); fails++; }
     if (!(gap < 0.08)) { puts("FAIL the main thread was held"); fails++; }
-    if (!(after > base * 0.6)) { puts("FAIL the threads did not run again after the cap was turned off"); fails++; }
     if (!(w > 4.0 && h > 1.0)) { puts("FAIL the stats do not show the run"); fails++; }
     if (fails) return 1;
     puts("ok");
