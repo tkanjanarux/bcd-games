@@ -536,7 +536,13 @@ def finalize(out: Path, ipa_dir: Path) -> None:
     (out / "prebuild-inputs.json").write_text(preflight_file.read_text())
     (out / "build-environment.json").write_text(json.dumps(sdk, indent=2) + "\n")
     msc = ROOT / "build-out/evidence/msc-origin.json"
-    if msc.is_file():
+    if not msc.is_file():
+        fail("verified Metal Shader Converter mirror provenance is missing")
+    msc_origin = json.loads(msc.read_text())
+    if any(msc_origin.get(key) is not True for key in (
+            "mirror_commit_signature_verified_by_github", "apple_code_signature_verified", "baseline_headers_match")):
+        fail("Metal Shader Converter provenance is missing required verification results")
+    if (out / "msc-origin.json").resolve() != msc.resolve():
         (out / "msc-origin.json").write_bytes(msc.read_bytes())
 
     current = {r["path"]: r["sha256"] for r in inventory_tracked_binaries()}
@@ -562,6 +568,7 @@ def finalize(out: Path, ipa_dir: Path) -> None:
         "workflow_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
         "workflow": ".github/workflows/build-ipa.yml",
         "build_environment": sdk,
+        "metal_shader_converter": msc_origin,
         "submodules": input_manifest["submodules"],
         "signing": {"certificate": "none", "provisioning_profile": "none", "ipa_seal": "ad-hoc signature only; no Apple ID or team identity"},
         "outputs": [{"name": p.name, "sha256": sha256(p), "size_bytes": p.stat().st_size} for p in ipa_paths],

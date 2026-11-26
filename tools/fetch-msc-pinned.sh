@@ -20,10 +20,32 @@ COMMIT_JSON="$TMP/mirror-commit.json"
 
 # The release payload is pinned by its own SHA-256. Also verify that the public
 # mirror anchor is the exact GitHub-verified signed commit recorded in the lock.
-curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
-  --proto '=https' --proto-redir '=https' --max-time 60 \
-  -H 'Accept: application/vnd.github+json' \
-  -o "$COMMIT_JSON" "https://api.github.com/repos/intraducine/iridium/commits/$MIRROR_COMMIT"
+COMMIT_URL="https://api.github.com/repos/intraducine/iridium/commits/$MIRROR_COMMIT"
+ASSET_URL="https://api.github.com/repos/intraducine/iridium/releases/assets/591229297"
+
+fetch() {
+  local label="$1" seconds="$2" dest="$3"
+  shift 3
+  echo "Fetching $label"
+  curl --disable --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+    --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time "$seconds" \
+    -o "$dest" "$@"
+}
+
+fetch_api() {
+  local label="$1" seconds="$2" dest="$3" accept="$4" api_url="$5"
+  [[ "$api_url" == https://api.github.com/repos/intraducine/iridium/* ]] || return 1
+  if [[ -n "${BCD_MSC_GITHUB_TOKEN:-}" ]]; then
+    if fetch "$label (GitHub Actions API)" "$seconds" "$dest" \
+        -H "Authorization: Bearer $BCD_MSC_GITHUB_TOKEN" -H "Accept: $accept" "$api_url"; then
+      return 0
+    fi
+    echo "::warning::Authenticated $label endpoint failed; retrying the same endpoint anonymously"
+  fi
+  fetch "$label (anonymous GitHub API)" "$seconds" "$dest" -H "Accept: $accept" "$api_url"
+}
+
+fetch_api "pinned Metal Shader Converter mirror commit" 60 "$COMMIT_JSON" 'application/vnd.github+json' "$COMMIT_URL"
 python3 - "$COMMIT_JSON" "$MIRROR_COMMIT" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
@@ -31,8 +53,13 @@ if data.get("sha") != sys.argv[2] or data.get("commit", {}).get("verification", 
     raise SystemExit("Metal Shader Converter mirror anchor is not the expected GitHub-verified commit")
 PY
 
-curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
-  --proto '=https' --proto-redir '=https' --max-time 300 -o "$ARCHIVE" "$URL"
+TRANSPORT_URL="$URL"
+if ! fetch "pinned Metal Shader Converter release archive" 300 "$ARCHIVE" "$URL"; then
+  echo "::warning::Direct release download failed; trying the same pinned asset via GitHub's release API"
+  TRANSPORT_URL="$ASSET_URL"
+  fetch_api "pinned Metal Shader Converter release asset" 300 "$ARCHIVE" 'application/octet-stream' "$ASSET_URL"
+fi
+unset BCD_MSC_GITHUB_TOKEN
 printf '%s  %s\n' "$ARCHIVE_SHA256" "$ARCHIVE" | shasum -a 256 -c -
 
 # Refuse path traversal and link entries before extraction. The whole archive
@@ -87,11 +114,13 @@ cat > "$OUT/msc-origin.json" <<EOF
   "version": "4.0 beta 2",
   "publisher": "Apple Inc.",
   "source_url": "$URL",
+  "download_transport_url": "$TRANSPORT_URL",
   "mirror_source_commit": "$MIRROR_COMMIT",
   "mirror_commit_signature_verified_by_github": true,
   "mirror_archive_sha256": "$ARCHIVE_SHA256",
   "original_apple_ios_dylib_sha256": "$APPLE_IOS_DYLIB_SHA256",
   "apple_code_signature_verified": true,
+  "baseline_headers_match": true,
   "notes": "The library is the Apple-signed binary whose SHA-256 is pinned by the v0.1.712 source. The mirror archive is used because Apple's developer download portal requires interactive sign-in; no Apple ID is used in CI."
 }
 EOF

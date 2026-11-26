@@ -71,6 +71,15 @@ jobs:
           echo "iOS SDK $SDK"
           [[ "$SDK" == 27.* ]] || { echo "::error::expected iOS 27 SDK, got $SDK"; exit 1; }
 
+      # Verify the pinned Apple converter before the long compile steps. The
+      # job's read-only automatic token is scoped to this step for GitHub API
+      # rate limits; there are no account credentials or repository secrets.
+      - name: Fetch and verify Apple Metal Shader Converter
+        shell: bash
+        env:
+          BCD_MSC_GITHUB_TOKEN: ${{ github.token }}
+        run: bash tools/fetch-msc-pinned.sh
+
       - name: Build number
         id: bn
         shell: bash
@@ -3143,13 +3152,6 @@ jobs:
             xxd -i "$s.air" | sed "s/${s}_air/${s}/g" > "$s.h"
           done
           ls -la
-
-      # The Apple-signed iOS library is fetched from a content-pinned mirror
-      # because Apple's developer portal requires interactive sign-in. Verify
-      # its pinned hash, Apple signature, and exact match to the vendored headers.
-      - name: Fetch and verify Apple Metal Shader Converter
-        shell: bash
-        run: bash tools/fetch-msc-pinned.sh
 
       - name: Locate Metal Shader Converter headers
         shell: bash
