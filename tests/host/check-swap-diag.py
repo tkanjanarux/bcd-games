@@ -164,14 +164,26 @@ static DWORD GetCurrentThreadId(void) { return 0x42; }
 static void EnterCriticalSection(CRITICAL_SECTION *cs) { pthread_mutex_lock(&cs->m); }
 static void LeaveCriticalSection(CRITICAL_SECTION *cs) { pthread_mutex_unlock(&cs->m); }
 static int timeouts;
+static int quick_case, quick_wait_entered;
 static pthread_mutex_t timeout_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t timeout_cv = PTHREAD_COND_INITIALIZER;
-/* The 2000 ms slices run 40 times faster here. */
+/* Scale only the slices that intentionally time out. In the quick case,
+ * rendezvous with the worker after entering the first slice. The deadline is
+ * a harness watchdog, not a scheduler-sensitive assertion. */
 static BOOL SleepConditionVariableCS(CONDITION_VARIABLE *cv, CRITICAL_SECTION *cs, DWORD ms) {
     struct timespec ts;
     long scaled = (long)ms / 40;
     assert(ms == 2000);
     clock_gettime(CLOCK_REALTIME, &ts);
+    if (quick_case) {
+        ts.tv_sec += 10;
+        if (pthread_mutex_lock(&timeout_lock) != 0) abort();
+        quick_wait_entered = 1;
+        if (pthread_cond_broadcast(&timeout_cv) != 0) abort();
+        if (pthread_mutex_unlock(&timeout_lock) != 0) abort();
+        if (pthread_cond_timedwait(&cv->c, &cs->m, &ts) != 0) abort();
+        return 1;
+    }
     ts.tv_nsec += scaled * 1000000L;
     ts.tv_sec += ts.tv_nsec / 1000000000L; ts.tv_nsec %= 1000000000L;
     if (pthread_cond_timedwait(&cv->c, &cs->m, &ts) == ETIMEDOUT) {
@@ -217,9 +229,14 @@ static struct mad_queue q = { (void *)1, { PTHREAD_MUTEX_INITIALIZER }, { PTHREA
                               { PTHREAD_COND_INITIALIZER }, { PTHREAD_COND_INITIALIZER } };
 static volatile int worker_done;
 static void *finish_job(void *arg) {
-    uintptr_t delay_ms = (uintptr_t)arg;
-    if (delay_ms) {
-        usleep((useconds_t)delay_ms * 1000);
+    if (arg) {
+        struct timespec deadline;
+        if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) abort();
+        deadline.tv_sec += 10;
+        if (pthread_mutex_lock(&timeout_lock) != 0) abort();
+        while (!quick_wait_entered)
+            if (pthread_cond_timedwait(&timeout_cv, &timeout_lock, &deadline) != 0) abort();
+        if (pthread_mutex_unlock(&timeout_lock) != 0) abort();
     } else {
         /* Start the simulated 3.5-slice stall only after the drain has
          * observed two full timeout slices. This avoids a scheduler race in
@@ -283,10 +300,14 @@ int main(void) {
     /* a job that finishes inside the first slice: no line */
     loglen = 0; logbuf[0] = 0; timeouts = 0;
     q.sub_busy = 1; q.diag_job = MAD_SUB_ECL; worker_done = 0;
-    pthread_create(&t, NULL, finish_job, (void *)(uintptr_t)10);
-    mad_queue_drain(&q);
-    pthread_join(t, NULL);
-    assert(worker_done && timeouts == 0 && loglen == 0);
+    quick_case = 1;
+    if (pthread_create(&t, NULL, finish_job, (void *)(uintptr_t)1) != 0) abort();
+    last_error = 0x1234; mad_queue_drain(&q);
+    if (pthread_mutex_lock(&q.sub_lock.m) != 0) abort();
+    assert(worker_done && !q.sub_busy && quick_wait_entered && timeouts == 0 && loglen == 0 && last_error == 0x1234);
+    if (pthread_mutex_unlock(&q.sub_lock.m) != 0) abort();
+    if (pthread_join(t, NULL) != 0) abort();
+    quick_case = 0;
     /* the Present throttle: two queued presents, run-ahead 1 (read from the
      * config once, whose line may change LastError, as before) */
     g_present_ahead = 1;
