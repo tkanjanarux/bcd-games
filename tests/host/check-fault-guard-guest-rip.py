@@ -312,7 +312,22 @@ with tempfile.TemporaryDirectory() as tmp:
                           else 'restarts and ends at 3999' if (state == 'on' and mode == 'reset') else 'ends at the 2000 mark')
                 check('switch %s: %s %s' % (state, what, expect), good, out)
 
-    exe = build(tmp, 'pagefault', page_harness.replace('@GUARD@', page_guard))
+    # Xcode's standard headers may transitively declare Mach types and
+    # macros. Namespace only the simulated Mach interface in this fixture;
+    # the extracted page-fault logic and sanitizer checks are unchanged.
+    fake_mach_names = (
+        'EXC_BAD_ACCESS', 'EXC_BAD_INSTRUCTION', 'KERN_SUCCESS', 'ARM_THREAD_STATE64',
+        'VM_REGION_BASIC_INFO_COUNT_64', 'VM_REGION_BASIC_INFO_64', 'MACH_PORT_NULL',
+        'mach_vm_address_t', 'mach_vm_size_t', 'mach_msg_type_number_t', 'mach_port_t',
+        'thread_state_t', 'vm_region_info_t', 'vm_region_basic_info_data_64_t',
+        'arm_thread_state64_t', 'mach_task_self', 'mach_vm_region', 'thread_set_state',
+        '__darwin_arm_thread_state64_get_sp', '__darwin_arm_thread_state64_set_sp',
+        '__darwin_arm_thread_state64_set_pc_fptr',
+    )
+    mach_identifiers = re.compile(r'\b(?:' + '|'.join(fake_mach_names) + r')\b')
+    page_text = page_harness.replace('@GUARD@', page_guard)
+    page_text = mach_identifiers.sub(lambda m: 'bcd_test_' + m[0].lstrip('_'), page_text)
+    exe = build(tmp, 'pagefault', page_text)
     if exe:
         for state in ('off', 'on'):
             for mode, what in (('instruction', 'instruction traps at one pc and opcode'), ('memory', 'a real memory loop on one address'),
