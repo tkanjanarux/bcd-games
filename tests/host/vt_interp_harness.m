@@ -19,6 +19,13 @@
 #include <mach/mach_time.h>
 #include <math.h>
 
+// Zero means use the real clock. Only the scripted game producer changes
+// this value, and only the producer's submit path reads it.
+static uint64_t g_test_submit_time;
+static uint64_t vti_test_submit_time(void) {
+  return g_test_submit_time ? g_test_submit_time : mach_absolute_time();
+}
+
 // ---- what the block calls in winemetal_unix.c
 static volatile int g_madeira_vsync_mode = 0, g_madeira_panel_hz = 120;
 static _Atomic int g_lsfg_shown = 1;
@@ -474,14 +481,21 @@ int main(int argc, char **argv) {
              "25 FPS on a 120 Hz screen: three pictures at a quarter, a half and three quarters; all four frames are enlarged by MetalFX and presented, the later three at their times");
       expect(before(@"pass surf4.y -> ", @"pass surf5.y -> ") && before(@"pass surf5.y -> ", @"pass surf6.y -> ") && before(@"pass surf6.y", @"MetalFX tex1(960x540)"),
              "the pictures are converted back and shown in order, the game's own frame last");
-      /* 60 FPS: only the middle one fits. The engine measures real time between presents: on a loaded machine the 20 ms frames
-       * can come late enough to count as a slower game (three pictures). Such a run is measured again, three times at most. */
-      for (int tries = 0; tries < 3; tries++) {
-        double t0 = now_s();
-        frames(layer, q, 12, 20, 0); reset_ops(); frames(layer, q, 3, 20, 0);
-        if ((now_s() - t0) / 15.0 < 0.026) break;
-        dprintf(STDOUT_FILENO, "   (the machine was slow: %.1f ms a frame instead of 20; measured again)\n", (now_s() - t0) / 15.0 * 1000.0);
+      /* Feed 50 FPS timestamps into the same live session. Worker completion
+       * is still real, but runner scheduling cannot turn 20 ms into 40 ms. */
+      mach_timebase_info_data_t timebase;
+      if (mach_timebase_info(&timebase) != KERN_SUCCESS || !timebase.numer || !timebase.denom) return 1;
+      const uint64_t step = 20000000ull * timebase.denom / timebase.numer;
+      g_test_submit_time = g_vti.last_abs;
+      if (!g_test_submit_time || !step) return 1;
+      for (int i = 0; i < 15; i++) {
+        if (i == 12) reset_ops();
+        g_test_submit_time += step;
+        @autoreleasepool { game_frame(layer, q, 0, &tn); }
+        if (!wait_worker()) return 1;
       }
+      g_test_submit_time = 0;
+      drain_main();
       expect(has(@"-> 1 picture(s) at 0.50") && !has(@"3 picture(s)"), "the same session at 50 FPS: one picture, at the half");
       madeira_vti_session_ended();
 

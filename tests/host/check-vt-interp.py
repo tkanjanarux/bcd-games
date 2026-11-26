@@ -221,7 +221,13 @@ int main(void) {
         tests = mine[mine.index("//@@TESTS"):]
         spot = "// The four thunks, cut down to the old behaviour plus the script's own hook lines.\n"
         assert h.count(spot) == 1
-        h = h.replace(spot, prelude + mod.BLOCK[len(mod.A_BLOCK):] + after_block + spot)
+        # Control only the sample time at the game's submit boundary. The
+        # worker, real framework calls and all other phases keep their clocks.
+        block = mod.BLOCK[len(mod.A_BLOCK):]
+        submit_clock = "uint64_t now = mach_absolute_time();"
+        assert block.count(submit_clock) == 1
+        block = block.replace(submit_clock, "uint64_t now = vti_test_submit_time();", 1)
+        h = h.replace(spot, prelude + block + after_block + spot)
         # present-fx's stand-ins, for two threads and for passes: where a pass draws to, command buffers numbered atomically, and
         # the recorded operations printed with a failing check
         for a, b in (
