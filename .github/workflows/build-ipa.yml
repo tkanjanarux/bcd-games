@@ -1513,12 +1513,31 @@ jobs:
 
       - name: Fetch pinned FreeType source
         shell: bash
+        timeout-minutes: 7
         run: |
-          rm -rf research/freetype
-          git clone --filter=blob:none --no-checkout https://github.com/freetype/freetype.git research/freetype
-          git -C research/freetype fetch --depth 1 origin 42608f77f20749dd6ddc9e0536788eaad70ea4b5
-          git -C research/freetype checkout --detach 42608f77f20749dd6ddc9e0536788eaad70ea4b5
-          test "$(git -C research/freetype rev-parse HEAD)" = 42608f77f20749dd6ddc9e0536788eaad70ea4b5
+          set -euo pipefail
+          rev=42608f77f20749dd6ddc9e0536788eaad70ea4b5
+          dir=research/freetype
+          export GIT_TERMINAL_PROMPT=0
+          rm -rf "$dir"
+          git init -q "$dir"
+          git -C "$dir" remote add origin https://github.com/freetype/freetype.git
+          fetched=0
+          # One shallow fetch downloads the pinned commit and its blobs together.
+          # Do not prompt for credentials or fall back to another source.
+          for pause in 0 4 8 16; do
+            if [ "$pause" -ne 0 ]; then sleep "$pause"; fi
+            if git -C "$dir" -c credential.helper= -c http.extraHeader= \
+                -c http.https://github.com/.extraHeader= -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=30 \
+                fetch --no-tags --depth 1 origin "$rev"; then
+              fetched=1
+              break
+            fi
+            echo "::warning::Pinned FreeType fetch failed"
+          done
+          test "$fetched" -eq 1
+          git -C "$dir" checkout --detach "$rev"
+          test "$(git -C "$dir" rev-parse HEAD)" = "$rev"
 
       - name: Build freetype-ios
         run: bash build/freetype-ios/build.sh
