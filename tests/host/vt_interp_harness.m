@@ -268,14 +268,17 @@ static void end_scripted_frames(void) {
     if (mach_wait_until(g_test_submit_time + 1) != KERN_SUCCESS) abort();
   g_test_submit_time = 0;
 }
+static void advance_scripted_time(int ms) {
+  if (!g_test_submit_time || ms <= 0) abort();
+  g_test_submit_time += (uint64_t)ms * 1000000ull * test_timebase.denom / test_timebase.numer;
+}
 // One frame of the game every `ms` on the clock, each waited for (the worker keeps up).
 static void frames(FakeLayer *layer, FakeQueue *q, int n, int ms, int how) {
   NSString *tn = nil;
   double t0 = now_s();
   for (int i = 0; i < n; i++) {
     sleep_until(t0 + (i + 1) * ms / 1000.0);
-    if (g_test_submit_time)
-      g_test_submit_time += (uint64_t)ms * 1000000ull * test_timebase.denom / test_timebase.numer;
+    if (g_test_submit_time) advance_scripted_time(ms);
     @autoreleasepool { game_frame(layer, q, how, &tn); }
     if (!wait_worker()) abort();
   }
@@ -351,15 +354,18 @@ int main(int argc, char **argv) {
              "the session is ready: BGRA is taken of the formats offered (420v, BGRA)");
       expect(madeira_vti_status(NULL, NULL, NULL, NULL, NULL) == 2, "the menu's status: ready, no picture yet");
 
+      /* Make exact cadence assertions independent of host preemption; the
+         real asynchronous worker must still finish each of these frames. */
+      begin_scripted_frames();
       /* the first frame with the session: nothing before it */
-      usleep(33000); reset_ops(); g_cb_number = 0;
+      usleep(33000); advance_scripted_time(33); reset_ops(); g_cb_number = 0;
       @autoreleasepool { game_frame(layer, q, 0, &tn); }
       expect(wait_idle() && [ops_text() hasPrefix:@"game: commit | own2: copy tex1(1280x720) -> surf1 | own2: commit | cadence presentVTInterp"],
              "a frame with the session: right behind the game's own buffer its picture is copied into a pixel buffer, on the game's thread");
       expect(!has(@"VT:") && has(@"copy tex1(1280x720) -> drawable5(1280x720)") && count_of(@": present ") == 1 && g_legacy_presents == 4,
              "nothing before it yet: the worker presents the game's frame alone, and the present call's own code did not run");
       /* the second: one picture */
-      usleep(33000); reset_ops(); g_cb_number = 0;
+      usleep(33000); advance_scripted_time(33); reset_ops(); g_cb_number = 0;
       @autoreleasepool { game_frame(layer, q, 0, &tn); }
       expect(wait_idle() && [ops_text() isEqualToString:
               @"game: commit | own2: copy tex1(1280x720) -> surf2 | own2: commit | cadence presentVTInterp | own2: waited for | "
@@ -370,6 +376,7 @@ int main(int argc, char **argv) {
              "the next frame: the worker waits for the copy, VideoToolbox gets the two buffers, the picture goes out from a buffer of its own "
              "that is committed before the game's frame takes its drawable, and the game's frame follows at its own time");
       frames(layer, q, 6, 33, 0);
+      end_scripted_frames();
       expect(atomic_load(&g_vt_processed) == 7 && has(@"VT: surf2 + surf3") && has(@"VT: surf3 + surf1") && has(@"VT: surf1 + surf2"),
              "six more frames: the three buffers go round, each pair is the frame before and the frame");
       expect(atomic_load(&g_vti.generated) == 7 && !has(@"COMMITTED TWICE") && !atomic_load(&g_pfx_pending) && g_textures_made <= 4,
