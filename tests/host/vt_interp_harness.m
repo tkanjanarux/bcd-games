@@ -254,14 +254,30 @@ static int count_of(NSString *needle) {
 static int logged(NSString *needle) {
   @synchronized (g_log) { return [g_log rangeOfString:needle].location != NSNotFound; }
 }
+// Keep the worker and simulated device asynchronous, but make cadence
+// samples independent of scheduling delays where the frame rate is asserted.
+static mach_timebase_info_data_t test_timebase;
+static void begin_scripted_frames(void) {
+  if (g_test_submit_time || mach_timebase_info(&test_timebase) != KERN_SUCCESS ||
+      !test_timebase.numer || !test_timebase.denom) abort();
+  g_test_submit_time = g_vti.last_abs ? g_vti.last_abs : mach_absolute_time();
+}
+static void end_scripted_frames(void) {
+  // Do not switch back to a real submit timestamp earlier than the last one.
+  while (mach_absolute_time() <= g_test_submit_time)
+    if (mach_wait_until(g_test_submit_time + 1) != KERN_SUCCESS) abort();
+  g_test_submit_time = 0;
+}
 // One frame of the game every `ms` on the clock, each waited for (the worker keeps up).
 static void frames(FakeLayer *layer, FakeQueue *q, int n, int ms, int how) {
   NSString *tn = nil;
   double t0 = now_s();
   for (int i = 0; i < n; i++) {
     sleep_until(t0 + (i + 1) * ms / 1000.0);
+    if (g_test_submit_time)
+      g_test_submit_time += (uint64_t)ms * 1000000ull * test_timebase.denom / test_timebase.numer;
     @autoreleasepool { game_frame(layer, q, how, &tn); }
-    wait_worker();
+    if (!wait_worker()) abort();
   }
   drain_main();
 }
@@ -363,11 +379,13 @@ int main(int argc, char **argv) {
 
       /* ---- the screen cannot show more */
       g_madeira_panel_hz = 60;
-      frames(layer, q, 10, 12, 0);   /* the measured frame time follows over a few frames */
+      begin_scripted_frames();
+      frames(layer, q, 16, 12, 0);   /* let the estimate settle even after a prior long frame */
       reset_ops();
       { unsigned long long before_n = atomic_load(&g_vti.generated), rate0 = atomic_load(&g_vti.skip_rate); frames(layer, q, 8, 12, 0);
         expect(atomic_load(&g_vti.generated) == before_n && !has(@"VT:") && atomic_load(&g_vti.skip_rate) == rate0 + 8 && count_of(@": present ") == 8,
                "a game at 80 on a 60 Hz screen: no pictures (the screen cannot show them), every frame of the game is presented"); }
+      end_scripted_frames();
       g_madeira_panel_hz = 120;
 
       /* ---- a frame-rate limit */
@@ -395,6 +413,7 @@ int main(int argc, char **argv) {
       expect(has(@" after 0.033") && !has(@"VT:"), "a present after a minimum duration gets no pictures and keeps its duration");
 
       /* ---- the copy fails on the GPU */
+      begin_scripted_frames();
       frames(layer, q, 2, 33, 0);
       g_copy_error = 1; reset_ops();
       frames(layer, q, 1, 33, 0);
@@ -404,6 +423,7 @@ int main(int argc, char **argv) {
       expect(!has(@"VT:"), "and the frame after it has no frame before it");
       reset_ops(); frames(layer, q, 1, 33, 0);
       expect(has(@"VT:"), "the one after that has again");
+      end_scripted_frames();
 
       /* ---- a stall */
       usleep(300000); reset_ops(); frames(layer, q, 1, 1, 0);
@@ -469,8 +489,9 @@ int main(int argc, char **argv) {
       layer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
       madeira_pfx_set_upscale(1, 2000);
       layer_set_props(layer, 960, 540);
-      frames(layer, q, 3, 5, 0);
+      frames(layer, q, 1, 5, 0);
       expect(wait_state(2) && logged(@"pixel format '420f' (the picture is converted to it and back)"), "of 420v and 420f the full-range one is taken");
+      begin_scripted_frames();
       frames(layer, q, 2, 40, 0);
       reset_ops(); g_cb_number = 0;
       frames(layer, q, 1, 40, 0);
@@ -481,21 +502,10 @@ int main(int argc, char **argv) {
              "25 FPS on a 120 Hz screen: three pictures at a quarter, a half and three quarters; all four frames are enlarged by MetalFX and presented, the later three at their times");
       expect(before(@"pass surf4.y -> ", @"pass surf5.y -> ") && before(@"pass surf5.y -> ", @"pass surf6.y -> ") && before(@"pass surf6.y", @"MetalFX tex1(960x540)"),
              "the pictures are converted back and shown in order, the game's own frame last");
-      /* Feed 50 FPS timestamps into the same live session. Worker completion
-       * is still real, but runner scheduling cannot turn 20 ms into 40 ms. */
-      mach_timebase_info_data_t timebase;
-      if (mach_timebase_info(&timebase) != KERN_SUCCESS || !timebase.numer || !timebase.denom) return 1;
-      const uint64_t step = 20000000ull * timebase.denom / timebase.numer;
-      g_test_submit_time = g_vti.last_abs;
-      if (!g_test_submit_time || !step) return 1;
-      for (int i = 0; i < 15; i++) {
-        if (i == 12) reset_ops();
-        g_test_submit_time += step;
-        @autoreleasepool { game_frame(layer, q, 0, &tn); }
-        if (!wait_worker()) return 1;
-      }
-      g_test_submit_time = 0;
-      drain_main();
+      frames(layer, q, 12, 20, 0);
+      reset_ops();
+      frames(layer, q, 3, 20, 0);
+      end_scripted_frames();
       expect(has(@"-> 1 picture(s) at 0.50") && !has(@"3 picture(s)"), "the same session at 50 FPS: one picture, at the half");
       madeira_vti_session_ended();
 
