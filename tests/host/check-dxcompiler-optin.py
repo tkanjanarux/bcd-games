@@ -121,11 +121,15 @@ i_restore = wf.find('- name: Restore dxcompiler.dll (DirectX Shader Compiler, x8
 i_build = wf.find('- name: Build dxcompiler.dll and ship it as dxcompiler-optin.dll')
 i_save = wf.find('- name: Save dxcompiler.dll')
 i_verify = wf.find('- name: Verify the opt-in DLLs the lists and rules name')
-i_mingw = wf.find('- name: Install ninja/meson and fetch llvm-mingw')
+i_mingw = wf.find('- name: Install hash-locked Mesa build tools and fetch llvm-mingw')
 check('CI restores, builds (continue-on-error) and saves build/dxc-win/out after llvm-mingw and before the opt-in DLL check',
-      -1 < i_mingw < i_restore < i_build < i_save < i_verify and wf.count(key) == 2
+      -1 < i_mingw < i_restore < i_build < i_save < i_verify and wf.count(key + "-${{ github.run_id }}-${{ github.run_attempt }}") == 2
       and 'run: bash tools/build-dxcompiler.sh' in wf[i_build:i_save] and 'continue-on-error: true' in wf[i_build:i_save]
       and "if: env.MINGW_OK == '1'" in wf[i_build:i_save] and 'path: build/dxc-win/out' in wf[i_restore:i_build])
+mingw_step = wf[i_mingw:wf.find('\n      - name:', i_mingw + 1)]
+check('the pinned llvm-mingw archive is verified before extraction and enabling the compiler',
+      -1 < mingw_step.find('shasum -a 256') < mingw_step.find('llvm-mingw SHA-256 mismatch')
+      < mingw_step.find('tar -xJf') < mingw_step.find('MINGW_OK=1'))
 check('the cache key hashes the inputs only, never build/dxc-win/out or the work tree',
       "hashFiles('build/dxc-win/**" not in wf and 'build/dxc-win/work' not in wf)
 check('CI runs this check', 'run: python3 tests/host/check-dxcompiler-optin.py' in wf)
