@@ -29,6 +29,7 @@
 # app/Madeira/gl), MOLTENVK_JOBS (xcodebuild's -jobs).
 set -eu
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$R/build/moltenvk-ios/fetch-pinned.sh"
 SRC="${MOLTENVK_PATCHED_SRC:-$R/toolchains/MoltenVK-patched}"
 SPC="${MOLTENVK_PATCHED_SPIRV_CROSS_SRC:-$R/toolchains/MoltenVK-patched-SPIRV-Cross}"
 OUT="${MOLTENVK_PATCHED_OUT:-$R/app/Madeira/gl}"
@@ -49,9 +50,8 @@ own_repo() { [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$
 
 # 1. MoltenVK v1.4.2 in a folder of its own.
 if [ ! -f "$SRC/fetchDependencies" ]; then
-    echo "MoltenVK source not found at $SRC; cloning v1.4.2"
-    mkdir -p "$(dirname "$SRC")"
-    git clone -q -b v1.4.2 https://github.com/KhronosGroup/MoltenVK "$SRC"
+    echo "Fetching pinned MoltenVK v1.4.2 into $SRC"
+    bcd_fetch_pinned_source "$SRC" https://github.com/KhronosGroup/MoltenVK.git "$MVK_COMMIT" v1.4.2
 fi
 own_repo "$SRC" || { echo "$SRC is not a git repository of its own" >&2; exit 1; }
 if [ "$(git -C "$SRC" rev-parse HEAD)" != "$MVK_COMMIT" ]; then
@@ -85,7 +85,7 @@ fi
 # with the patch's hash, and a clean tree on the commit made from it.
 if [ ! -d "$SPC/.git" ]; then
     mkdir -p "$(dirname "$SPC")"
-    git clone -q https://github.com/KhronosGroup/SPIRV-Cross "$SPC"
+    bcd_fetch_pinned_source "$SPC" https://github.com/KhronosGroup/SPIRV-Cross.git "$SPC_COMMIT"
 fi
 own_repo "$SPC" || { echo "$SPC is not a git repository of its own" >&2; exit 1; }
 SPC_STAMP="$(git -C "$SPC" rev-parse --absolute-git-dir)/bcd-patch-sha"

@@ -15,15 +15,15 @@
 # commit check and the clone; MoltenVK itself is used unmodified.
 set -eu
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$R/build/moltenvk-ios/fetch-pinned.sh"
 SRC="${MOLTENVK_SRC:-$R/toolchains/MoltenVK}"
 OUT="$R/app/Madeira/gl"
 LIC="$R/app/Madeira/licenses"
 MVK_COMMIT=db66022459ffb663aa2b50f6b018bc2e124f5edf
 
 if [ ! -f "$SRC/fetchDependencies" ]; then
-    echo "MoltenVK source not found at $SRC; cloning v1.4.2"
-    mkdir -p "$(dirname "$SRC")"
-    git clone -q -b v1.4.2 https://github.com/KhronosGroup/MoltenVK "$SRC"
+    echo "Fetching pinned MoltenVK v1.4.2 into $SRC"
+    bcd_fetch_pinned_source "$SRC" https://github.com/KhronosGroup/MoltenVK.git "$MVK_COMMIT" v1.4.2
 fi
 if [ "$(git -C "$SRC" rev-parse HEAD)" != "$MVK_COMMIT" ]; then
     echo "MoltenVK at $SRC is $(git -C "$SRC" rev-parse HEAD), expected $MVK_COMMIT (v1.4.2)" >&2
