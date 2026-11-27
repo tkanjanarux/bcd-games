@@ -220,11 +220,13 @@ ci = (R / ".github/workflows/build-ipa.yml").read_text()
 step = ci[ci.index("      - name: Restore KosmicKrisp (Mesa's Vulkan on Metal 4)"):ci.index("      # A game's own *.log lines (errors, GPU / driver / display lines) in the")]
 key = "kosmickrisp-v1-${{ hashFiles('build/mesa-ios/build-kosmickrisp-bcd.sh', 'build/mesa-ios/build-kosmickrisp.sh', 'build/mesa-ios/build-playport-kosmickrisp.sh', 'build/mesa-ios/fetch-playport.py', 'build/mesa-ios/kk-stale-source.sh', 'build/mesa-ios/kosmickrisp-ios-arm64.cross', 'build/mesa-ios/kosmickrisp-patches/*.patch', 'build/mesa-ios/playport-patches/*.patch') }}"
 check("CI: restore, build, save on one key of the scripts and the patches; three named files, no globs (the local runner tests each path)",
-      step.count(key) == 2 and step.count("app/Madeira/gl/libvulkan_kosmickrisp.dylib\n") == 2 and "*" not in "".join(l for l in step.splitlines() if l.strip().startswith("app/Madeira/")), step[:1500])
+      step.count(key + "-${{ github.run_id }}-${{ github.run_attempt }}") == 2 and step.count("app/Madeira/gl/libvulkan_kosmickrisp.dylib\n") == 2 and "*" not in "".join(l for l in step.splitlines() if l.strip().startswith("app/Madeira/")), step[:1500])
 check("...a failed build only warns, saves nothing and leaves no older library in the package",
       "        id: kkbuild\n        if: steps.kkcache.outputs.cache-hit != 'true'\n        continue-on-error: true\n        run: bash build/mesa-ios/build-kosmickrisp-bcd.sh\n" in step
-      and "if: steps.kkcache.outputs.cache-hit != 'true' && steps.kkbuild.outcome == 'success'\n        uses: actions/cache/save@v4" in step
-      and "if: steps.kkcache.outputs.cache-hit != 'true' && steps.kkbuild.outcome != 'success'\n        run: |\n          rm -f app/Madeira/gl/libvulkan_kosmickrisp.dylib" in step)
+      and "if: steps.kkcache.outputs.cache-hit != 'true' && steps.kkbuild.outcome == 'success'\n        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809" in step
+      and "if: steps.kkcache.outputs.cache-hit != 'true' && steps.kkbuild.outcome != 'success'\n        run: |\n          rm -f app/Madeira/gl/libvulkan_kosmickrisp.dylib" in step
+      and "app/Madeira/gl/libvulkan_kosmickrisp.version app/Madeira/licenses/KosmicKrisp-Mesa-license.rst" in step
+      and "rm -f app/Madeira/gl/libvulkan_kosmickrisp_real.dylib" in step)
 check("...the OpenGL libraries' cache key is what it was, and the build routes and this file run in CI",
       "key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}" in ci
       and "run: python3 tests/host/check-playport-mesa-profile.py" in ci and "run: python3 tests/host/check-kosmickrisp.py" in ci)
