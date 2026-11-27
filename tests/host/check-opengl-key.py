@@ -369,9 +369,17 @@ else:
 sh = (R / "tools/build-wine-extra-dlls.sh").read_text()
 blk = sh[sh.index("# madeira-bcd (OpenGL): opengl32-optin.dll (see OGL above)"):]
 blk = blk[:blk.index('\nfi\n', blk.index('if [ -n "$OGL" ]; then')) + 4]
-check("tools/build-wine-extra-dlls.sh: the OGL block builds from a tree with the fork's change and no uncommitted opengl32 edit, never replaces the shipped DLL",
+check("tools/build-wine-extra-dlls.sh: the OGL block builds from the pinned tree with only the exact approved Unix overlay, never replaces the shipped DLL",
       'if [ "${MADEIRA_OPENGL32_BUILD:-1}" != 0 ] && [ -f "$R/wine/dlls/opengl32/unix_wgl.c" ] && [ -f "$SHIP/opengl32.dll" ]; then\n    OGL=opengl32' in sh
-      and 'git -C "$R/wine" diff --quiet -- dlls/opengl32 && grep -q "ios_wow_host_ptr" "$R/wine/dlls/opengl32/unix_private.h"' in blk
+      and 'pinned="$(git -C "$R" rev-parse HEAD:wine)" || exit 1' in blk
+      and '[ "$(git -C "$wine" rev-parse HEAD)" = "$pinned" ] || exit 1' in blk
+      and 'git -C "$wine" diff --quiet HEAD -- dlls/opengl32 ":(exclude)$rel" || exit 1' in blk
+      and 'ls-files --others --exclude-standard -- dlls/opengl32' in blk and '[ -z "$extras" ] || exit 1' in blk
+      and 'grep -q "ios_wow_host_ptr" "$wine/$rel" || exit 1' in blk
+      and 'git -C "$wine" show "HEAD:$rel" > "$fixture/$rel"' in blk
+      and 'python3 "$R/tools/patch-wine-gl-null-sync.py" "$fixture" || exit 1' in blk
+      and 'cmp -s "$fixture/$rel" "$wine/$rel"\n)' in blk
+      and 'if opengl32_sources_match; then' in blk
       and 'mv "$og_tmp" "$SHIP/opengl32-optin.dll"' in blk and 'python3 "$R/tools/verify-opengl32-optin.py" "$og_tmp" "$SHIP/opengl32.dll"' in blk
       and '"$MINGW/arm64ec-w64-mingw32-strip" --strip-debug "$og_tmp"' in blk and '"$SHIP/opengl32.dll"' in blk
       and '"$todo$OGL$XI' in sh)
