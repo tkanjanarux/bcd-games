@@ -105,6 +105,13 @@ ring_a = thr.index("struct ios_teb_free_rec {")
 ring_b = thr.index("static void ios_teb_free_note( TEB *teb )")
 ring_lookup = cut(thr, "int ios_teb_free_lookup( uintptr_t addr, char *out, size_t outsz )\n{")
 ring_decl = thr[ring_a:ring_b]
+# Isolate this ring scenario from the scheduler without changing the real
+# lookup arithmetic or the clocks used by the other compiled scenarios.
+ring_clock_call = "clock_gettime( CLOCK_MONOTONIC, &ts );"
+assert ring_decl.count(ring_clock_call) == 1
+ring_decl = ("static void fixture_ring_clock(struct timespec *ts)\n"
+             "{ ts->tv_sec = 10; ts->tv_nsec = 123000000; }\n"
+             + ring_decl.replace(ring_clock_call, "fixture_ring_clock( &ts );"))
 
 HARNESS = r'''
 #include <stdint.h>
