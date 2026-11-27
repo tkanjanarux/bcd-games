@@ -24,6 +24,7 @@ Mach calls, one process per switch state:
 """
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 
@@ -165,7 +166,20 @@ flags = ['-std=gnu11', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parame
 env = dict(os.environ, ASAN_OPTIONS='detect_leaks=0')
 with tempfile.TemporaryDirectory() as tmp:
     c, exe = Path(tmp) / 'loop.c', Path(tmp) / 'loop'
-    c.write_text(harness.replace('@HELPER@', helper).replace('@BLOCK@', block))
+    # Keep the stand-in types and macros separate from declarations that
+    # Xcode's system headers pull in. Only this generated fixture is rewritten.
+    fake_mach_names = (
+        'EXC_BAD_ACCESS', 'EXC_BAD_INSTRUCTION', 'KERN_SUCCESS', 'ARM_THREAD_STATE64',
+        'VM_REGION_BASIC_INFO_COUNT_64', 'VM_REGION_BASIC_INFO_64', 'MACH_PORT_NULL',
+        'mach_vm_address_t', 'mach_vm_size_t', 'mach_msg_type_number_t', 'mach_port_t',
+        'thread_state_t', 'vm_region_info_t', 'vm_region_basic_info_data_64_t',
+        'arm_thread_state64_t', 'mach_task_self', 'mach_vm_region', 'thread_set_state',
+        '__darwin_arm_thread_state64_get_sp', '__darwin_arm_thread_state64_set_sp',
+        '__darwin_arm_thread_state64_set_pc_fptr',
+    )
+    mach_identifiers = re.compile(r'\b(?:' + '|'.join(fake_mach_names) + r')\b')
+    fixture = harness.replace('@HELPER@', helper).replace('@BLOCK@', block)
+    c.write_text(mach_identifiers.sub(lambda m: 'bcd_test_' + m[0].lstrip('_'), fixture))
     r = subprocess.run([cc] + flags + [str(c), '-o', str(exe)], capture_output=True, text=True)
     check('the production helper and breaker block compile on the host with AddressSanitizer and UBSan', r.returncode == 0, r.stderr[-3000:])
     if r.returncode == 0:
