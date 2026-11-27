@@ -60,6 +60,7 @@ PATCH_SPC = R / "build/moltenvk-ios/patches/spirv-cross-0001-instance-relative-p
 # ===================================================================================================================== 1. the sources
 script = (R / "build/moltenvk-ios/build-patched.sh").read_text()
 plain = (R / "build/moltenvk-ios/build.sh").read_text()
+fetch_pinned = (R / "build/moltenvk-ios/fetch-pinned.sh").read_text()
 check("the script: the credits of both sources (Connor Gow's build.sh, RageMC's pull request) and the licence line, in its header",
       script.startswith("#!/bin/bash\n# Portions copyright 2026 Connor Gow: code taken from https://github.com/willfaust/Madeira (pull request #462)\n")
       and "# Portions copyright 2026 RageMC: code taken from https://github.com/thebcd69/bcd-games (pull request #57 by RageMC)\n" in script
@@ -69,8 +70,12 @@ check("the script: MoltenVK v1.4.2 by its commit (the plain script's), in a fold
       and 'SRC="${MOLTENVK_PATCHED_SRC:-$R/toolchains/MoltenVK-patched}"' in script
       and 'SPC="${MOLTENVK_PATCHED_SPIRV_CROSS_SRC:-$R/toolchains/MoltenVK-patched-SPIRV-Cross}"' in script
       and 'toolchains/MoltenVK"' not in script and "toolchains/MoltenVK}" not in script
-      and 'git clone -q -b v1.4.2 https://github.com/KhronosGroup/MoltenVK "$SRC"' in script
-      and 'git clone -q https://github.com/KhronosGroup/SPIRV-Cross "$SPC"' in script)
+      and 'source "$R/build/moltenvk-ios/fetch-pinned.sh"' in script
+      and 'bcd_fetch_pinned_source "$SRC" https://github.com/KhronosGroup/MoltenVK.git "$MVK_COMMIT" v1.4.2' in script
+      and 'bcd_fetch_pinned_source "$SPC" https://github.com/KhronosGroup/SPIRV-Cross.git "$SPC_COMMIT"' in script
+      and 'GIT_TERMINAL_PROMPT=0' in fetch_pinned and 'fetch --no-tags --depth 1 origin "$fetchspec"' in fetch_pinned
+      and 'rev-parse "refs/tags/$tag^{commit}")" != "$commit"' in fetch_pinned
+      and 'rev-parse HEAD)" == "$commit"' in fetch_pinned)
 check("the script: the library under its own name and install name, written to a temporary file first and removed again if anything fails; the plain name never",
       'LIB=libMoltenVK_patched.dylib' in script and "trap 'rm -f \"$OUT/$LIB.tmp\"' EXIT" in script
       and 'cp "$BIN" "$OUT/$LIB.tmp"' in script and 'install_name_tool -id "@rpath/$LIB" "$OUT/$LIB.tmp"' in script
@@ -104,17 +109,17 @@ check("the SPIRV-Cross patch is a mailbox patch of spirv_msl.cpp / spirv_msl.hpp
 
 # ===================================================================================================================== 2. CI
 ci = (R / ".github/workflows/build-ipa.yml").read_text()
-key_plain = "key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}\n"
+key_plain = "key: opengl-libs-v1-${{ hashFiles('build/mesa-ios/build.sh', 'build/mesa-ios/ios-arm64.cross', 'build/mesa-ios/patches/*.patch', 'build/moltenvk-ios/build.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}\n"
 check("CI: the plain OpenGL library set keeps its cache key (restore and save), so that the patched build never rebuilds Mesa or MoltenVK",
       ci.count(key_plain) == 2 and "run: bash build/moltenvk-ios/build.sh\n" in ci)
-key_p = "key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}\n"
+key_p = "key: moltenvk-patched-v1-${{ hashFiles('build/moltenvk-ios/build-patched.sh', 'build/moltenvk-ios/patches/*.patch') }}-${{ github.run_id }}-${{ github.run_attempt }}\n"
 paths = "          path: |\n            app/Madeira/gl/libMoltenVK_patched.dylib\n            app/Madeira/gl/libMoltenVK_patched.version\n"
 steps = {
-    "restore": "      - name: Restore patched MoltenVK (second Vulkan library)\n        id: mvkpcache\n        uses: actions/cache/restore@v4\n        with:\n" + paths,
+    "restore": "      - name: Restore patched MoltenVK (second Vulkan library)\n        id: mvkpcache\n        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809\n        with:\n" + paths,
     "build": "      - name: Build patched MoltenVK for iOS\n        id: mvkpbuild\n        if: steps.mvkpcache.outputs.cache-hit != 'true'\n"
              "        continue-on-error: true\n        run: bash build/moltenvk-ios/build-patched.sh\n",
     "save": "      - name: Save patched MoltenVK\n        if: steps.mvkpcache.outputs.cache-hit != 'true' && steps.mvkpbuild.outcome == 'success'\n"
-            "        uses: actions/cache/save@v4\n        with:\n" + paths,
+            "        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809\n        with:\n" + paths,
     "drop": "      - name: Drop a stale patched MoltenVK after a failed build\n        if: steps.mvkpcache.outputs.cache-hit != 'true' && steps.mvkpbuild.outcome != 'success'\n"
             "        run: |\n          rm -f app/Madeira/gl/libMoltenVK_patched.dylib app/Madeira/gl/libMoltenVK_patched.dylib.tmp app/Madeira/gl/libMoltenVK_patched.version\n",
 }
@@ -237,7 +242,7 @@ check("the bundled plain-text notice names it too, with the licence, the pull re
       "MoltenVK, patched (bcd-games pull request #57 by RageMC)" in bundled and "Apache-2.0 like MoltenVK" in bundled and "nivogli (github.com/nivogli/MoltenVK)" in bundled
       and "gl/libMoltenVK_patched.dylib" in bundled and "Isabella Basso" in bundled)
 check("the README names the contributor, the settings page lists no new licence text (the Apache texts of MoltenVK and SPIRV-Cross are the ones it already lists)",
-      "[RageMC](https://github.com/RageMC)" in (R / "README-BCD.md").read_text()
+      "[RageMC](https://github.com/RageMC)" in (R / "README.md").read_text()
       and '"MoltenVK-Apache-2.0.txt": "MoltenVK' in (R / "app/Madeira/BCDSettingsLive.swift").read_text())
 doc_path = R / "docs/VULKAN.md"
 if doc_path.is_file():
@@ -245,7 +250,8 @@ if doc_path.is_file():
     check("docs/VULKAN.md has the section, and the test is named in its list", "## Yamalı MoltenVK (build 669): `vulkan = moltenvk-patched`" in doc and "check-moltenvk-patched.py" in doc)
 else:
     print("UNVERIFIED: docs/VULKAN.md is absent from v0.1.712; patched MoltenVK source, provenance and build checks still run")
-check("app/Madeira/gl/README.md names the script", "build/moltenvk-ios/build-patched.sh" in (R / "app/Madeira/gl/README.md").read_text())
+check("the tracked build notes name the patched library and its build script",
+      "gl/libMoltenVK_patched.dylib" in notices and "`build/moltenvk-ios/build-patched.sh`" in notices)
 
 # ===================================================================================================================== 5. runs on this Mac
 mac = sys.platform == "darwin" and shutil.which("clang") and shutil.which("xcrun")
@@ -467,6 +473,7 @@ if (K / "KhronosGroup--MoltenVK.git").is_dir() and (K / "KhronosGroup--SPIRV-Cro
         tmp = Path(tmp)
         (tmp / "build/moltenvk-ios/patches").mkdir(parents=True)
         shutil.copy(R / "build/moltenvk-ios/build-patched.sh", tmp / "build/moltenvk-ios/build-patched.sh")
+        shutil.copy(R / "build/moltenvk-ios/fetch-pinned.sh", tmp / "build/moltenvk-ios/fetch-pinned.sh")
         for p in (PATCH_MVK, PATCH_SPC):
             shutil.copy(p, tmp / "build/moltenvk-ios/patches" / p.name)
         shim = tmp / "shim"
