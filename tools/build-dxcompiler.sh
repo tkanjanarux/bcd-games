@@ -37,6 +37,8 @@ JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 DXC_URL=https://github.com/microsoft/DirectXShaderCompiler.git
 DXC_TAG=v1.9.2609
 DXC_COMMIT=01b62ad47db7dee3dd33f90e7339cf9e860b3f93
+DXC_FORMAT_TAG=llvmorg-17.0.1
+DXC_FORMAT_COMMIT=e19b7dc36bc047b9eb72078d034596be766da350
 PATCH="$ROOT/build/dxc-win/0001-mingw-w64-build.patch"
 TOOLCHAIN="$ROOT/build/dxc-win/mingw-x86_64.cmake"
 CHECK="$ROOT/tools/check-dxcompiler-shipped.py"
@@ -46,7 +48,7 @@ if [ ! -x "$MINGW/x86_64-w64-mingw32-clang++" ]; then
     exit 0
 fi
 stamp() {
-    { echo "$DXC_TAG $DXC_COMMIT"; shasum -a 256 "$PATCH" "$TOOLCHAIN" "${BASH_SOURCE[0]}" | cut -c1-64
+    { echo "$DXC_TAG $DXC_COMMIT"; shasum -a 256 "$PATCH" "$TOOLCHAIN" "$ROOT/build/moltenvk-ios/fetch-pinned.sh" "${BASH_SOURCE[0]}" | cut -c1-64
       "$MINGW/x86_64-w64-mingw32-clang" --version | head -1; } | shasum -a 256 | cut -c1-64
 }
 STAMP="$(stamp)"
@@ -63,13 +65,35 @@ if [ -f "$OUT/dxcompiler.dll" ] && [ "$(cat "$OUT/stamp" 2>/dev/null)" = "$STAMP
     exit 0
 fi
 
+# The formatter version pinned by DXC's own clang-format-checker.yml.
+# A newer host clang-format rewrites the generated DXIL headers differently.
+# Build the official LLVM source and leave DXC's byte-for-byte HCT check on.
+source "$ROOT/build/moltenvk-ios/fetch-pinned.sh"
+FORMAT_SRC="$WORK/llvm-format-$DXC_FORMAT_COMMIT"
+FORMAT_BUILD="$WORK/llvm-format-build-$DXC_FORMAT_COMMIT"
+FORMAT="$FORMAT_BUILD/bin/clang-format"
+if [ ! -d "$FORMAT_SRC/.git" ]; then
+    bcd_fetch_pinned_source "$FORMAT_SRC" https://github.com/llvm/llvm-project.git "$DXC_FORMAT_COMMIT" "$DXC_FORMAT_TAG"
+fi
+[ "$(git -C "$FORMAT_SRC" rev-parse HEAD)" = "$DXC_FORMAT_COMMIT" ]
+git -C "$FORMAT_SRC" diff --quiet HEAD --
+if [ ! -x "$FORMAT" ]; then
+    cmake -S "$FORMAT_SRC/llvm" -B "$FORMAT_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_PROJECTS=clang -DLLVM_TARGETS_TO_BUILD=AArch64 \
+        -DLLVM_INCLUDE_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+        -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+        > "$WORK/format-configure.log" 2>&1 || { tail -50 "$WORK/format-configure.log"; exit 1; }
+    ninja -C "$FORMAT_BUILD" -j"$JOBS" clang-format > "$WORK/format-build.log" 2>&1 || { tail -50 "$WORK/format-build.log"; exit 1; }
+fi
+"$FORMAT" --version | grep -Eq 'clang-format version 17\.0\.1([[:space:]]|$)'
+
 # 1. The source at the pinned commit, with the one patch. A tree from an earlier run is reused only when it is that commit with that patch.
 SRC="$WORK/src"
 SRC_STAMP="$DXC_COMMIT $(shasum -a 256 "$PATCH" | cut -c1-64)"
 if [ "$(cat "$WORK/src.stamp" 2>/dev/null)" != "$SRC_STAMP" ]; then
     rm -rf "$SRC" "$WORK/src.stamp" "$WORK/host" "$WORK/x64"
     mkdir -p "$WORK"
-    git clone -q --depth 1 --branch "$DXC_TAG" "$DXC_URL" "$SRC"
+    bcd_fetch_pinned_source "$SRC" "$DXC_URL" "$DXC_COMMIT" "$DXC_TAG"
     [ "$(git -C "$SRC" rev-parse HEAD)" = "$DXC_COMMIT" ] || { echo "build-dxcompiler: $DXC_TAG is not $DXC_COMMIT" >&2; exit 1; }
     git -C "$SRC" apply "$PATCH"
     echo "$SRC_STAMP" > "$WORK/src.stamp"
@@ -81,6 +105,7 @@ git -C "$SRC" submodule update -q --init --depth 1 external/DirectX-Headers exte
 
 # 2. The two tablegen tools for the Mac itself (the cross build runs them).
 COMMON=(-G Ninja -C "$SRC/cmake/caches/PredefinedParams.cmake" -DCMAKE_BUILD_TYPE=Release
+        -DCLANG_FORMAT_EXE:FILEPATH="$FORMAT"
         -DHLSL_INCLUDE_TESTS=OFF -DENABLE_SPIRV_CODEGEN=OFF -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF
         -DLLVM_BUILD_TESTS=OFF -DLLVM_APPEND_VC_REV=OFF -DLLVM_ENABLE_ASSERTIONS=OFF -DHLSL_BUILD_DXILCONV=OFF)
 cmake -S "$SRC" -B "$WORK/host" "${COMMON[@]}" -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \

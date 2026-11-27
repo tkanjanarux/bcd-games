@@ -145,6 +145,7 @@ def verify_pinned_input_references(lock: dict[str, object]) -> None:
         "MoltenVK": [ROOT / "build/moltenvk-ios/build.sh", ROOT / "build/moltenvk-ios/build-patched.sh"],
         "SPIRV-Cross": [ROOT / "build/moltenvk-ios/build-patched.sh"],
         "DirectXShaderCompiler": [ROOT / "tools/build-dxcompiler.sh"],
+        "DXC clang-format host tool": [ROOT / "tools/build-dxcompiler.sh"],
         "d3d8to9": [ROOT / "third-party/d3d8to9/BCD-SOURCE.txt"],
         "cnc-ddraw": [ROOT / "third-party/cnc-ddraw/BCD-SOURCE.txt"],
         "DXMT overlay test base": [ROOT / "tests/host/dxmt_base.py"],

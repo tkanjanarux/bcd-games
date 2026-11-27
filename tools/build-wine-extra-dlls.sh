@@ -519,14 +519,35 @@ if [ -n "$KUD" ]; then
     fi
     rm -f "$k32" "$B"/dlls/kernel32/arm64ec-windows/*.o
 fi
-# madeira-bcd (OpenGL): opengl32-optin.dll (see OGL above), from the restored tree. Only from an opengl32 the pin left as it is and that has the
+# madeira-bcd (OpenGL): opengl32-optin.dll (see OGL above), from the restored tree. Only from pinned sources plus the approved Unix header overlay, with the
 # fork's change; stripped like the kernelbase variant and padded to at least SizeOfImage + 0x10000 like the other extra DLLs; verified (the
 # shipped DLL's machine and exports, not based at 0x7a800000) before it ships. Its delay import of glu32 stays, as in the shipped file. The
 # objects are removed afterwards (wine/build-arm64ec is cached).
+# Accept exactly the tracked Unix-side NULL-sync patch in addition to the clean
+# pinned source. Generate that expected header separately; never reset the live
+# Unix sources or allow unrelated differences in the OpenGL PE build.
+opengl32_sources_match() (
+    wine="$R/wine"
+    rel=dlls/opengl32/unix_private.h
+    pinned="$(git -C "$R" rev-parse HEAD:wine)" || exit 1
+    [ "$(git -C "$wine" rev-parse HEAD)" = "$pinned" ] || exit 1
+    git -C "$wine" diff --quiet HEAD -- dlls/opengl32 ":(exclude)$rel" || exit 1
+    extras="$(git -C "$wine" ls-files --others --exclude-standard -- dlls/opengl32)" || exit 1
+    [ -z "$extras" ] || exit 1
+    grep -q "ios_wow_host_ptr" "$wine/$rel" || exit 1
+
+    fixture="$(mktemp -d)" || exit 1
+    trap 'rm -rf "$fixture"' EXIT
+    mkdir -p "$fixture/dlls/opengl32" || exit 1
+    git -C "$wine" show "HEAD:$rel" > "$fixture/$rel" || exit 1
+    if cmp -s "$fixture/$rel" "$wine/$rel"; then exit 0; fi
+    python3 "$R/tools/patch-wine-gl-null-sync.py" "$fixture" || exit 1
+    cmp -s "$fixture/$rel" "$wine/$rel"
+)
 if [ -n "$OGL" ]; then
     og="$B/dlls/opengl32/arm64ec-windows/opengl32.dll"
     og_tmp="$SHIP/opengl32-optin.dll.tmp"
-    if git -C "$R/wine" diff --quiet -- dlls/opengl32 && grep -q "ios_wow_host_ptr" "$R/wine/dlls/opengl32/unix_private.h"; then
+    if opengl32_sources_match; then
         rm -f "$og" "$B"/dlls/opengl32/arm64ec-windows/*.o
         make -C "$B" -j"$JOBS" dlls/opengl32/arm64ec-windows/opengl32.dll > "$B.opengl32.log" 2>&1
         if [ -f "$og" ] && cp "$og" "$og_tmp" && "$MINGW/arm64ec-w64-mingw32-strip" --strip-debug "$og_tmp"; then
@@ -551,7 +572,7 @@ PY
             grep -m 10 "error" "$B.opengl32.log"
         fi
     else
-        echo "::warning::wine/dlls/opengl32 differs from the pin or lacks the fork's winios change; opengl32-optin.dll not built"
+        echo "::warning::wine/dlls/opengl32 differs from the pin plus the approved NULL-sync patch, or lacks the fork's winios change; opengl32-optin.dll not built"
     fi
     rm -f "$og" "$B"/dlls/opengl32/arm64ec-windows/*.o
 fi

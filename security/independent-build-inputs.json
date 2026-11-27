@@ -71,6 +71,12 @@
       "path": "toolchains/MoltenVK-patched-SPIRV-Cross"
     },
     {
+      "name": "DXC clang-format host tool",
+      "url": "https://github.com/llvm/llvm-project.git",
+      "commit": "e19b7dc36bc047b9eb72078d034596be766da350",
+      "path": "build/dxc-win/work/llvm-format-e19b7dc36bc047b9eb72078d034596be766da350"
+    },
+    {
       "name": "DirectXShaderCompiler",
       "url": "https://github.com/microsoft/DirectXShaderCompiler.git",
       "commit": "01b62ad47db7dee3dd33f90e7339cf9e860b3f93",
